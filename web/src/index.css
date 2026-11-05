@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-envoy: #0a4bd6;
+  --color-envoy-deep: #0842bc;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #0a4bd6;
+  color: #ffffff;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(10, 75, 214, 0.24);
+  color: inherit;
+}
+
+@keyframes envoy-fiber-beam {
+  to {
+    stroke-dashoffset: -2400;
+  }
+}
+
+.envoy-hero-beam {
+  stroke-dasharray: 80 1600;
+  animation: envoy-fiber-beam 16s linear infinite;
+}
+
+.envoy-hero-beam-delayed {
+  stroke-dasharray: 64 1800;
+  animation: envoy-fiber-beam 20s linear infinite;
+  animation-delay: -8s;
+}
+
+.envoy-hero-beam-slow {
+  stroke-dasharray: 56 2000;
+  animation: envoy-fiber-beam 24s linear infinite;
+  animation-delay: -5s;
+}
+
+@keyframes envoy-fiber-beam-vertical {
+  to {
+    stroke-dashoffset: -900;
+  }
+}
+
+.envoy-hero-beam-vertical {
+  stroke-dasharray: 420 480;
+  animation: envoy-fiber-beam-vertical 18s linear infinite;
+}
+
+.envoy-hero-beam-vertical-delayed {
+  stroke-dasharray: 380 520;
+  animation: envoy-fiber-beam-vertical 22s linear infinite;
+  animation-delay: -9s;
+}
+
+.envoy-hero-beam-vertical-alt {
+  stroke-dasharray: 340 560;
+  animation: envoy-fiber-beam-vertical 20s linear infinite;
+  animation-delay: -4s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .envoy-hero-beam,
+  .envoy-hero-beam-delayed,
+  .envoy-hero-beam-slow,
+  .envoy-hero-beam-vertical,
+  .envoy-hero-beam-vertical-delayed,
+  .envoy-hero-beam-vertical-alt {
+    animation: none;
+  }
+}
+
+@keyframes envoy-scan {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+.envoy-scan-bar {
+  animation: envoy-scan 1.6s ease-in-out infinite;
+}
+
+@keyframes envoy-pulse-dot {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.envoy-live-dot {
+  animation: envoy-pulse-dot 1.4s ease-in-out infinite;
+}
+
+/* draw 1.2s → hold 5s → undraw 1.2s → wait 7s  = 14.4s */
+@keyframes envoy-mail-draw {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  8.33% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  43.06% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  51.2% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  51.39% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+}
+
+.envoy-mail-draw {
+  overflow: visible;
+}
+
+.envoy-mail-draw rect,
+.envoy-mail-draw path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: butt;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: envoy-mail-draw 14.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .envoy-mail-draw rect,
+  .envoy-mail-draw path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}

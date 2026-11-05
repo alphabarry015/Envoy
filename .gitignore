@@ -1,0 +1,43 @@
+# Environnement & secrets
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.cache/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
+
+# Alembic local noise
+alembic/versions/__pycache__/
+
+# Frontend
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+web/tsconfig*.tsbuildinfo
