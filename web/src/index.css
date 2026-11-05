@@ -165,3 +165,137 @@ body {
     stroke-dashoffset: 0;
   }
 }
+
+.html-source .hljs-name {
+  color: #0a4bd6;
+}
+
+.html-source .hljs-attr {
+  color: #525252;
+}
+
+.html-source .hljs-string {
+  color: #0842bc;
+}
+
+.html-source .hljs-meta,
+.html-source .hljs-selector-class,
+.html-source .hljs-selector-id {
+  color: #a3a3a3;
+}
+
+.html-source .hljs-selector-tag,
+.html-source .hljs-attribute {
+  color: #0a4bd6;
+}
+
+.html-source .hljs-number {
+  color: #0842bc;
+}
+
+.html-source-mirror {
+  scrollbar-width: none;
+}
+
+.html-source-mirror::-webkit-scrollbar {
+  display: none;
+}
+
+.html-editor textarea::selection {
+  color: transparent;
+  background: rgb(10 75 214 / 16%);
+}
+
+/* The editor theme follows the OS color scheme. The console stays light. */
+html:root,
+.envoy-template-editor {
+  color-scheme: light;
+  --re-bg: #fff;
+  --re-bg-active: #f5f5f5;
+  --re-bg-hover: #f5f5f5;
+  --re-border: #e5e5e5;
+  --re-text: #0a0a0a;
+  --re-text-muted: #737373;
+  --re-hover: rgb(10 75 214 / 8%);
+  --re-active: rgb(10 75 214 / 12%);
+  --re-pressed: rgb(10 75 214 / 12%);
+  --re-separator: #e5e5e5;
+  --re-radius: 0.125rem;
+  --re-radius-sm: 0.125rem;
+  --re-shadow: 0 10px 15px -3px rgb(0 0 0 / 8%), 0 4px 6px -4px rgb(0 0 0 / 6%);
+  --re-danger: #dc2626;
+  --re-danger-hover: rgb(220 38 38 / 10%);
+  --re-tooltip-bg: #0a0a0a;
+  --re-tooltip-text: #fff;
+}
+
+.envoy-template-editor .tiptap {
+  min-height: 100%;
+  color: #0a0a0a;
+  background: #fff;
+}
+
+.envoy-template-editor .tiptap .align-left,
+.envoy-template-editor .tiptap .align-center,
+.envoy-template-editor .tiptap .align-right {
+  display: block;
+  width: 100%;
+}
+
+.envoy-template-editor .tiptap .align-left {
+  text-align: left;
+}
+
+.envoy-template-editor .tiptap .align-center {
+  text-align: center;
+}
+
+.envoy-template-editor .tiptap .align-right {
+  text-align: right;
+}
+
+.envoy-template-editor .tiptap .node-columns {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  gap: 12px;
+}
+
+.envoy-template-editor .tiptap .node-column {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.envoy-drag-handle {
+  display: flex;
+}
+
+.envoy-button-grip {
+  position: absolute;
+  z-index: 5;
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e5e5e5;
+  border-radius: 0.125rem;
+  background: #fff;
+  color: #525252;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+  cursor: grab;
+}
+
+.envoy-button-grip:hover {
+  border-color: rgb(10 75 214 / 40%);
+  color: #0a4bd6;
+}
+
+.envoy-button-grip:active {
+  cursor: grabbing;
+}
+
+.envoy-template-editor .tiptap.ProseMirror[data-editor-theme-scope] .node-container {
+  margin-left: auto;
+  margin-right: auto;
+}

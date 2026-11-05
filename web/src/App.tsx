@@ -12,26 +12,24 @@ const DomainsPanel = lazy(() => import("./components/admin/DomainsPanel"));
 const DomainDetailPage = lazy(
   () => import("./components/admin/DomainDetailPage"),
 );
+const TemplatesPanel = lazy(() => import("./components/admin/TemplatesPanel"));
+const StarterTemplatesPage = lazy(
+  () => import("./components/admin/StarterTemplatesPage"),
+);
+const TemplateDetailPage = lazy(
+  () => import("./components/admin/TemplateDetailPage"),
+);
 const ApiKeysPanel = lazy(() => import("./components/admin/ApiKeysPanel"));
+const LogsPanel = lazy(() => import("./components/admin/LogsPanel"));
+const LogDetailPage = lazy(() => import("./components/admin/LogDetailPage"));
 const OverviewPanel = lazy(() =>
   import("./pages/AdminPage").then((module) => ({
     default: module.OverviewPanel,
   })),
 );
-const LogsPanel = lazy(() =>
-  import("./pages/AdminPage").then((module) => ({
-    default: module.LogsPanel,
-  })),
-);
-const UsersPanel = lazy(() =>
-  import("./pages/AdminPage").then((module) => ({
-    default: module.UsersPanel,
-  })),
-);
-const SuppressionPanel = lazy(() =>
-  import("./pages/AdminPage").then((module) => ({
-    default: module.SuppressionPanel,
-  })),
+const UsersPanel = lazy(() => import("./components/admin/UsersPanel"));
+const SuppressionPanel = lazy(
+  () => import("./components/admin/SuppressionPanel"),
 );
 
 function RouteFallback() {
@@ -56,8 +54,12 @@ export default function App() {
             <Route path="overview" element={<OverviewPanel />} />
             <Route path="domains" element={<DomainsPanel />} />
             <Route path="domains/:domainId" element={<DomainDetailPage />} />
+            <Route path="templates" element={<TemplatesPanel />} />
+            <Route path="templates/gallery" element={<StarterTemplatesPage />} />
+            <Route path="templates/:templateId" element={<TemplateDetailPage />} />
             <Route path="api-keys" element={<ApiKeysPanel />} />
             <Route path="logs" element={<LogsPanel />} />
+            <Route path="logs/:logId" element={<LogDetailPage />} />
             <Route path="users" element={<UsersPanel />} />
             <Route path="suppression" element={<SuppressionPanel />} />
           </Route>

@@ -1,4 +1,4 @@
-import { readJsonStorage, writeJsonStorage } from "./safeStorage";
+import { readJsonStorage, storedObjects, writeJsonStorage } from "./safeStorage";
 
 export type ApiKeyStatus = "active" | "revoked";
 export type ApiKeyMode = "live" | "sandbox";
@@ -64,11 +64,17 @@ const ALPHABET =
 const DEFAULT_SCOPES: ApiKeyScope[] = ["send"];
 
 function randomToken(length = 32): string {
+  const alphabet = ALPHABET.length;
+  const limit = Math.floor(256 / alphabet) * alphabet;
   let token = "";
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  for (let i = 0; i < length; i += 1) {
-    token += ALPHABET[bytes[i]! % ALPHABET.length];
+  while (token.length < length) {
+    const bytes = new Uint8Array(length - token.length);
+    crypto.getRandomValues(bytes);
+    for (const byte of bytes) {
+      if (byte >= limit) continue;
+      token += ALPHABET[byte % alphabet];
+      if (token.length === length) break;
+    }
   }
   return token;
 }
@@ -130,7 +136,7 @@ function isApiKeyArray(value: unknown): value is ConsoleApiKey[] {
 export function readStoredApiKeys(): ConsoleApiKey[] {
   const parsed = readJsonStorage(localStorage, STORAGE_KEY, isApiKeyArray);
   if (!parsed) return seedApiKeys();
-  return parsed.map(normalizeKey);
+  return storedObjects(parsed).map(normalizeKey);
 }
 
 export function writeStoredApiKeys(keys: ConsoleApiKey[]) {

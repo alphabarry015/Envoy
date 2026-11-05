@@ -1,4 +1,4 @@
-import { readJsonStorage, writeJsonStorage } from "./safeStorage";
+import { readJsonStorage, storedObjects, writeJsonStorage } from "./safeStorage";
 
 export type DnsRecord = {
   type: "CNAME" | "TXT";
@@ -185,6 +185,7 @@ function normalizeDomainRecord(domain: ConsoleDomain): ConsoleDomain {
     ...domain,
     provider,
     region: domain.region || "us-east-1",
+    dnsRecords: Array.isArray(domain.dnsRecords) ? domain.dnsRecords : [],
   };
 }
 
@@ -233,7 +234,7 @@ function isDomainArray(value: unknown): value is ConsoleDomain[] {
 export function readStoredDomains(): ConsoleDomain[] {
   const parsed = readJsonStorage(localStorage, STORAGE_KEY, isDomainArray);
   if (!parsed) return seedDomains();
-  return parsed.map(normalizeDomainRecord);
+  return storedObjects(parsed).map(normalizeDomainRecord);
 }
 
 export function getStoredDomain(id: string): ConsoleDomain | null {
