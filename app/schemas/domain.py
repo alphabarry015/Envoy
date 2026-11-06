@@ -49,6 +49,9 @@ class DomainResponse(BaseModel):
     verified_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    region: str = "us-east-2"
+    nameservers: list[str] = Field(default_factory=list)
+    mail_from: str = ""
 
 
 class DomainListResponse(BaseModel):

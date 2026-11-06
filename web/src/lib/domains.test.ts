@@ -46,6 +46,15 @@ describe("detectDnsProvider", () => {
     ).toBe("Cloudflare");
   });
 
+  it("maps Vercel NS", () => {
+    expect(
+      detectDnsProvider("example.com", [
+        "ns1.vercel-dns.com",
+        "ns2.vercel-dns.com",
+      ]),
+    ).toBe("Vercel");
+  });
+
   it("falls back to Other for unknown NS", () => {
     expect(detectDnsProvider("example.com", ["ns1.unknown.example"])).toBe(
       "Other",

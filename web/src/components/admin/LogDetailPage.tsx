@@ -6,8 +6,9 @@ import { Link, Navigate, useParams } from "react-router-dom";
 
 hljs.registerLanguage("xml", xml);
 
-import { type ConsoleEmailLog, getStoredLog } from "../../lib/emailLogs";
-import { StatusBadge } from "./LogsPanel";
+import { type ConsoleEmailLog, fetchLog } from "../../lib/emailLogs";
+import { PageLoading } from "../ui/ScanLoading";
+import { HttpStatus, MethodBadge, StatusBadge } from "./LogsPanel";
 
 function formatWhen(iso: string | null) {
   if (!iso) return "—";
@@ -19,19 +20,38 @@ function formatWhen(iso: string | null) {
 
 export default function LogDetailPage() {
   const { logId = "" } = useParams();
-  const [log, setLog] = useState<ConsoleEmailLog | null>(() =>
-    getStoredLog(logId),
-  );
+  const [log, setLog] = useState<ConsoleEmailLog | null>(null);
+  const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [showHtml, setShowHtml] = useState(true);
 
   useEffect(() => {
-    setLog(getStoredLog(logId));
+    let cancelled = false;
+    setLoading(true);
     setCopied(false);
     setDetailsOpen(true);
     setShowHtml(true);
+    fetchLog(logId)
+      .then((row) => {
+        if (!cancelled) setLog(row);
+      })
+      .catch(() => {
+        if (!cancelled) setLog(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [logId]);
+
+  if (loading) {
+    return (
+      <PageLoading>Loading log…</PageLoading>
+    );
+  }
 
   if (!log) {
     return <Navigate to="/console/logs" replace />;
@@ -57,7 +77,11 @@ export default function LogDetailPage() {
               {log.subject}
             </h2>
           </div>
-          <StatusBadge status={log.status} />
+          <div className="flex items-center gap-2">
+            <MethodBadge method={log.method} />
+            <HttpStatus code={log.httpStatus} />
+            <StatusBadge status={log.status} />
+          </div>
         </div>
 
         <button
@@ -82,6 +106,10 @@ export default function LogDetailPage() {
           <Meta label="From" value={log.from} />
           <Meta label="To" value={log.to.join(", ")} />
           <Meta label="Cc" value={log.cc.length > 0 ? log.cc.join(", ") : "—"} />
+          <Meta label="Bcc" value={log.bcc && log.bcc.length > 0 ? log.bcc.join(", ") : "—"} />
+          <Meta label="SES id" mono value={log.sesMessageId || "—"} />
+          <Meta label="Method" value={<MethodBadge method={log.method} />} />
+          <Meta label="HTTP" value={<HttpStatus code={log.httpStatus} />} />
           <Meta label="Domain" value={log.domain} />
           <Meta
             label="API key"
@@ -161,11 +189,13 @@ export default function LogDetailPage() {
             </button>
           </div>
         </div>
-        {showHtml ? (
-          <HtmlSource html={log.html} />
+        {!log.html && !log.text ? (
+          <p className="text-sm text-neutral-500">This send has no stored message body.</p>
+        ) : showHtml ? (
+          <HtmlSource html={log.html || "<p>No HTML body.</p>"} />
         ) : (
           <pre className="max-h-64 overflow-auto rounded-sm border border-neutral-200 bg-white p-4 font-mono text-sm leading-relaxed whitespace-pre-wrap text-neutral-950">
-            {log.text}
+            {log.text || "No text body."}
           </pre>
         )}
       </section>

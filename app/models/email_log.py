@@ -62,6 +62,8 @@ class EmailLog(Base):
     cc_addresses: Mapped[list[str] | None] = mapped_column(ARRAY(String(320)), nullable=True)
     bcc_addresses: Mapped[list[str] | None] = mapped_column(ARRAY(String(320)), nullable=True)
     subject: Mapped[str] = mapped_column(String(998), nullable=False)
+    html: Mapped[str | None] = mapped_column("body_html", Text, nullable=True)
+    text_body: Mapped[str | None] = mapped_column("body_text", Text, nullable=True)
     status: Mapped[EmailStatus] = mapped_column(
         Enum(
             EmailStatus,

@@ -15,7 +15,7 @@ Stack : **Python 3.11 · FastAPI · PostgreSQL 15 · SQLAlchemy 2.0 · Alembic �
 cp .env.example .env
 ```
 
-Éditez `.env` : mot de passe PostgreSQL, `SECRET_KEY` (64+ caractères) et, si besoin, les identifiants AWS.
+Éditez `.env` : collez l'URI Postgres Supabase dans `DATABASE_URL` (session pooler ou connexion directe), les clés API Supabase, `SECRET_KEY`, puis l'e-mail et le mot de passe du premier admin (`BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`).
 
 ```bash
 docker compose up --build
@@ -92,6 +92,6 @@ docs/          # CDC, architecture, design system, notes frontend
 
 ## Notes de configuration
 
-- `DATABASE_URL` utilise l'hôte `db` **à l'intérieur** de Compose. Hors conteneur, remplacer par `localhost`.
+- `DATABASE_URL` pointe vers Supabase. Le service Postgres local de Compose n'est démarré qu'avec `docker compose --profile local up`.
 - Les clés API seront préfixées par `envoy_live_` (`API_KEY_PREFIX`).
 - Les credentials AWS vides s'appuient sur la chaîne IAM par défaut (profil local, rôle d'instance, etc.).

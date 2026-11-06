@@ -9,7 +9,10 @@ from functools import lru_cache
 from typing import Any
 
 import boto3
+import httpx
 from botocore.exceptions import BotoCoreError, ClientError
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.core.config import Settings, get_settings
 from app.schemas.email import Attachment
@@ -17,6 +20,7 @@ from app.schemas.email import Attachment
 SPF_VALUE = "v=spf1 include:amazonses.com ~all"
 DMARC_VALUE = "v=DMARC1; p=none;"
 DEFAULT_TTL = 300
+DKIM_SELECTOR = "envoy"
 
 
 class SESClientError(RuntimeError):
@@ -35,18 +39,84 @@ class SESService:
         self._region = settings.aws_region
         self._configuration_set = settings.aws_ses_configuration_set or None
 
-    def create_domain_identity(self, domain: str) -> dict[str, Any]:
-        """Crée l'identité de domaine SES et active Easy DKIM RSA-2048."""
+    def generate_dkim_material(self) -> tuple[str, str]:
+        """RSA 2048 pour BYODKIM. Retourne la clé privée base64 et le TXT public."""
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        ).decode()
+        private_b64 = "".join(line for line in pem.splitlines() if "-----" not in line)
+        public_b64 = base64.b64encode(
+            key.public_key().public_bytes(
+                serialization.Encoding.DER,
+                serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+        ).decode()
+        return private_b64, f"v=DKIM1; k=rsa; p={public_b64}"
+
+    def create_byodkim_identity(self, domain: str, private_b64: str, public_txt: str) -> tuple[dict[str, Any], bool]:
+        """Crée l'identité SES avec le sélecteur envoy. False si elle existait déjà."""
+        created = True
         try:
             self._client.create_email_identity(
                 EmailIdentity=domain,
-                DkimSigningAttributes={"NextSigningKeyLength": "RSA_2048_BIT"},
+                DkimSigningAttributes={
+                    "DomainSigningSelector": DKIM_SELECTOR,
+                    "DomainSigningPrivateKey": private_b64,
+                },
             )
         except ClientError as exc:
             error_code = exc.response.get("Error", {}).get("Code", "")
             if error_code != "AlreadyExistsException":
                 raise SESClientError(self._format_error(exc)) from exc
-        return self.get_domain_identity(domain)
+            created = False
+        identity = self.get_domain_identity(domain)
+        if created:
+            self._stamp_dkim_txt(identity, domain, public_txt)
+        return identity, created
+
+    @staticmethod
+    def _stamp_dkim_txt(identity: dict[str, Any], domain: str, public_txt: str) -> None:
+        host = f"{DKIM_SELECTOR}._domainkey.{domain}"
+        records = identity.setdefault("dns_records", [])
+        stamped = False
+        for record in records:
+            if record.get("purpose") == "dkim":
+                record["type"] = "TXT"
+                record["name"] = host
+                record["value"] = public_txt
+                stamped = True
+        if not stamped:
+            records.insert(
+                0,
+                {
+                    "type": "TXT",
+                    "name": host,
+                    "value": public_txt,
+                    "ttl": DEFAULT_TTL,
+                    "purpose": "dkim",
+                    "status": "pending",
+                },
+            )
+
+    async def create_byodkim_identity_async(
+        self,
+        domain: str,
+        private_b64: str,
+        public_txt: str,
+    ) -> tuple[dict[str, Any], bool]:
+        return await asyncio.to_thread(self.create_byodkim_identity, domain, private_b64, public_txt)
+
+    def find_domain_identity(self, domain: str) -> dict[str, Any] | None:
+        """Retourne l'identité existante, ou None si SES ne la connaît pas."""
+        try:
+            return self.get_domain_identity(domain)
+        except SESClientError as exc:
+            if "NotFound" in str(exc):
+                return None
+            raise
 
     def get_domain_identity(self, domain: str) -> dict[str, Any]:
         """Retourne le statut DKIM et les enregistrements DNS à publier."""
@@ -58,7 +128,12 @@ class SESService:
         dkim = response.get("DkimAttributes") or {}
         tokens: list[str] = dkim.get("Tokens") or []
         dkim_status = dkim.get("Status", "NOT_STARTED")
-        records = self.build_dns_records(domain, tokens)
+        origin = dkim.get("SigningAttributesOrigin") or "AWS_SES"
+        records = (
+            self.build_byodkim_records(domain, tokens)
+            if origin == "EXTERNAL"
+            else self.build_dns_records(domain, tokens)
+        )
         return {
             "dkim_status": dkim_status,
             "verified": dkim_status == "SUCCESS",
@@ -86,7 +161,31 @@ class SESService:
             }
             for token in dkim_tokens
         ]
-        records.append(
+        records.extend(SESService._authentication_records(domain))
+        return records
+
+    def build_byodkim_records(self, domain: str, selectors: list[str]) -> list[dict[str, Any]]:
+        """Un TXT lisible par sélecteur (`envoy._domainkey`), plus SPF et DMARC."""
+        names = selectors or ["envoy"]
+        records: list[dict[str, Any]] = []
+        for selector in names:
+            host = f"{selector}._domainkey.{domain}"
+            records.append(
+                {
+                    "type": "TXT",
+                    "name": host,
+                    "value": self.lookup_txt(host),
+                    "ttl": DEFAULT_TTL,
+                    "purpose": "dkim",
+                    "status": "pending",
+                }
+            )
+        records.extend(self._authentication_records(domain))
+        return records
+
+    @staticmethod
+    def _authentication_records(domain: str) -> list[dict[str, Any]]:
+        return [
             {
                 "type": "TXT",
                 "name": domain,
@@ -94,9 +193,7 @@ class SESService:
                 "ttl": DEFAULT_TTL,
                 "purpose": "spf",
                 "status": "pending",
-            }
-        )
-        records.append(
+            },
             {
                 "type": "TXT",
                 "name": f"_dmarc.{domain}",
@@ -104,9 +201,29 @@ class SESService:
                 "ttl": DEFAULT_TTL,
                 "purpose": "dmarc",
                 "status": "pending",
-            }
-        )
-        return records
+            },
+        ]
+
+    def lookup_txt(self, host: str) -> str:
+        """Lit le TXT publié. Plusieurs chaînes DNS sont recollées."""
+        try:
+            response = httpx.get(
+                "https://cloudflare-dns.com/dns-query",
+                params={"name": host, "type": "TXT"},
+                headers={"accept": "application/dns-json"},
+                timeout=4,
+            )
+            response.raise_for_status()
+            answers = response.json().get("Answer") or []
+        except (httpx.HTTPError, ValueError):
+            return ""
+        for answer in answers:
+            raw = str(answer.get("data") or "")
+            parts = [chunk for chunk in raw.split('"') if chunk and chunk != " "]
+            value = "".join(parts).strip()
+            if value.upper().startswith("V=DKIM1"):
+                return value
+        return ""
 
     def send_email(
         self,
@@ -174,8 +291,28 @@ class SESService:
         """Exécute l'appel synchrone boto3 hors de la boucle événementielle."""
         return await asyncio.to_thread(self.send_email, **kwargs)
 
-    async def create_domain_identity_async(self, domain: str) -> dict[str, Any]:
-        return await asyncio.to_thread(self.create_domain_identity, domain)
+    def lookup_nameservers(self, domain: str) -> list[str]:
+        """NS publics via DNS-over-HTTPS. Une panne de lookup ne bloque pas le domaine."""
+        try:
+            response = httpx.get(
+                "https://cloudflare-dns.com/dns-query",
+                params={"name": domain, "type": "NS"},
+                headers={"accept": "application/dns-json"},
+                timeout=4,
+            )
+            response.raise_for_status()
+            answers = response.json().get("Answer") or []
+        except (httpx.HTTPError, ValueError):
+            return []
+        names: list[str] = []
+        for answer in answers:
+            host = str(answer.get("data") or "").strip().rstrip(".")
+            if host:
+                names.append(host.lower())
+        return names
+
+    async def find_domain_identity_async(self, domain: str) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self.find_domain_identity, domain)
 
     async def get_domain_identity_async(self, domain: str) -> dict[str, Any]:
         return await asyncio.to_thread(self.get_domain_identity, domain)

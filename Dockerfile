@@ -1,10 +1,11 @@
 # -----------------------------------------------------------------------------
-# Envoy — build multi-stage Python 3.11
+# Envoy API — build multi-stage Python 3.13
 # Stage 1 : installe les dépendances dans un virtualenv isolé
 # Stage 2 : image runtime minimale, utilisateur non-root
+# Au démarrage : `alembic upgrade head` (RUN_MIGRATIONS=false pour l'éviter), puis uvicorn.
 # -----------------------------------------------------------------------------
 
-FROM python:3.11-slim-bookworm AS builder
+FROM python:3.13-slim-bookworm AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -21,12 +22,15 @@ RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
 
-FROM python:3.11-slim-bookworm AS runtime
+FROM python:3.13-slim-bookworm AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    APP_ENV=production \
+    DEBUG=false \
+    PORT=8000
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl libpq5 \
@@ -41,12 +45,13 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --chown=envoy:envoy app ./app
 COPY --chown=envoy:envoy alembic ./alembic
 COPY --chown=envoy:envoy alembic.ini ./
+COPY --chown=envoy:envoy --chmod=755 docker/entrypoint.sh /usr/local/bin/envoy-entrypoint
 
 USER envoy
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD curl -fsS http://localhost:8000/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD curl -fsS "http://localhost:${PORT}/health" || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["envoy-entrypoint"]

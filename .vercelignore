@@ -1,0 +1,9 @@
+web
+docs
+docker
+.venv
+Dockerfile
+docker-compose.yml
+.env
+.env.*
+**/__pycache__

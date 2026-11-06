@@ -19,3 +19,6 @@ docs
 .dockerignore
 Dockerfile
 docker-compose.yml
+web
+vercel.json
+.vercelignore

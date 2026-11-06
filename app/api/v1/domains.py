@@ -5,62 +5,67 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_user
 from app.core.database import get_db
+from app.models.user import User
 from app.schemas.domain import DomainCreate, DomainListResponse, DomainResponse, DomainVerifyResponse
 from app.services.aws_ses import SESService, get_ses_service
+from app.services.domains import (
+    DomainError,
+    connect_domain,
+    disconnect_domain,
+    get_domain,
+    list_domains,
+    refresh_domain,
+)
 
 router = APIRouter()
+
+
+def _error(exc: DomainError) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+@router.get("", response_model=DomainListResponse, summary="Lister les domaines")
+async def list_user_domains(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    ses: SESService = Depends(get_ses_service),
+) -> DomainListResponse:
+    items = await list_domains(db, user, ses)
+    return DomainListResponse(items=items, total=len(items))
 
 
 @router.post(
     "",
     response_model=DomainResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Déclarer un domaine d'envoi",
+    summary="Connecter un domaine d'envoi",
 )
 async def create_domain(
     payload: DomainCreate,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
     ses: SESService = Depends(get_ses_service),
 ) -> DomainResponse:
-    """Crée l'identité SES, récupère les jetons DKIM et renvoie les records DNS.
-
-    Sprint suivant : persistance du domaine, contrôle des quotas utilisateur,
-    et appel `ses.create_domain_identity_async`.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Domain provisioning will be implemented in the next sprint",
-    )
+    """Relie un domaine déjà présent dans SES, ou le crée s'il n'existe pas."""
+    try:
+        return await connect_domain(db, user, payload.name, ses)
+    except DomainError as exc:
+        raise _error(exc) from exc
 
 
-@router.get(
-    "",
-    response_model=DomainListResponse,
-    summary="Lister les domaines",
-)
-async def list_domains(
-    db: AsyncSession = Depends(get_db),
-) -> DomainListResponse:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Domain listing will be implemented in the next sprint",
-    )
-
-
-@router.get(
-    "/{domain_id}",
-    response_model=DomainResponse,
-    summary="Détail d'un domaine",
-)
-async def get_domain(
+@router.get("/{domain_id}", response_model=DomainResponse, summary="Détail d'un domaine")
+async def read_domain(
     domain_id: UUID,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    ses: SESService = Depends(get_ses_service),
 ) -> DomainResponse:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Domain retrieval will be implemented in the next sprint",
-    )
+    try:
+        return await get_domain(db, user, domain_id, ses)
+    except DomainError as exc:
+        raise _error(exc) from exc
 
 
 @router.get(
@@ -71,26 +76,34 @@ async def get_domain(
 async def verify_domain(
     domain_id: UUID,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
     ses: SESService = Depends(get_ses_service),
 ) -> DomainVerifyResponse:
-    """Interroge `get_email_identity` et active le domaine si DKIM = SUCCESS."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Domain verification will be implemented in the next sprint",
+    try:
+        domain = await refresh_domain(db, user, domain_id, ses)
+    except DomainError as exc:
+        raise _error(exc) from exc
+    return DomainVerifyResponse(
+        id=domain.id,
+        name=domain.name,
+        status=domain.status,
+        dkim_status=domain.dkim_status,
+        verified=domain.status.value == "verified",
+        dns_records=domain.dns_records,
     )
 
 
 @router.delete(
     "/{domain_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Supprimer un domaine",
+    summary="Retirer un domaine d'Envoy",
 )
 async def delete_domain(
     domain_id: UUID,
     db: AsyncSession = Depends(get_db),
-    ses: SESService = Depends(get_ses_service),
+    user: User = Depends(get_current_user),
 ) -> None:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Domain deletion will be implemented in the next sprint",
-    )
+    try:
+        await disconnect_domain(db, user, domain_id)
+    except DomainError as exc:
+        raise _error(exc) from exc

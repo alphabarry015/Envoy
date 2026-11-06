@@ -13,7 +13,7 @@ const INPUT =
   "h-12 w-full rounded-sm border border-white/15 bg-white/5 px-5 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#7EB0FF] focus:ring-2 focus:ring-white/20";
 
 const LABEL =
-  "mb-2 block font-mono text-[11px] tracking-widest text-white/50 uppercase";
+  "mb-2 block font-mono text-[11px] tracking-widest text-white/80 uppercase";
 
 type FormState = {
   fullName: string;
@@ -49,20 +49,20 @@ export default function RequestAccessPage() {
       <FiberField intensity={0.28} />
       <SiteHeader variant="overlay" />
 
-      <div className="relative z-10 mx-auto grid w-full max-w-7xl flex-1 items-center gap-12 px-5 py-16 md:px-8 md:py-20 lg:grid-cols-12 lg:gap-16 lg:py-24">
+      <div className="relative z-10 mx-auto grid w-full max-w-[92rem] flex-1 items-center gap-8 px-4 py-8 sm:px-5 md:gap-12 md:px-8 md:py-20 lg:grid-cols-12 lg:gap-16 lg:py-24">
         <div className="lg:col-span-5">
-          <p className="mb-6 font-mono text-xs tracking-widest text-white/50 uppercase">
+          <p className="mb-6 font-mono text-xs tracking-widest text-white/80 uppercase">
             <span aria-hidden="true">■ </span>
             Request access
           </p>
-          <h1 className="max-w-xl text-4xl leading-tight font-semibold tracking-tight md:text-6xl">
-            Onboard a sovereign{" "}
-            <span className="block">sending workspace.</span>
+          <h1 className="max-w-xl text-3xl leading-tight font-semibold tracking-tight sm:text-4xl md:text-6xl">
+            Request access{" "}
+            <span className="block">to Envoy.</span>
           </h1>
-          <p className="mt-6 max-w-md text-base leading-relaxed text-white/70 md:text-lg">
-            Envoy is invite-only. Tell us how you send transactional mail and we
-            provision a hashed API key, domain quota, and SES identity on your
-            stack.
+          <p className="mt-6 max-w-md text-base leading-relaxed text-white/80 md:text-lg">
+            Accounts are created by invitation. Describe how you send
+            transactional email. If the request is accepted, an invitation is
+            sent to the address you provide.
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
@@ -80,7 +80,7 @@ export default function RequestAccessPage() {
             </span>
           </div>
 
-          <p className="mt-10 text-sm text-white/55">
+          <p className="mt-10 text-sm text-white/80">
             Already provisioned?{" "}
             <Link
               to="/console/login"
@@ -100,7 +100,7 @@ export default function RequestAccessPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.35, ease: "easeOut" }}
-                className="rounded-sm border border-white/15 bg-white/5 p-8 text-center backdrop-blur-md md:p-12"
+                className="rounded-sm border border-white/15 bg-[#0839B0]/80 p-8 text-center md:p-12"
               >
                 <span className="mx-auto mb-5 flex size-14 items-center justify-center rounded-sm border border-white/15 bg-white text-[#0A4BD6]">
                   <Check className="size-6" aria-hidden="true" />
@@ -108,10 +108,10 @@ export default function RequestAccessPage() {
                 <h2 className="text-2xl font-semibold tracking-tight">
                   Request received.
                 </h2>
-                <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-white/65">
-                  We will review {form.organization || "your organization"} and
-                  email {form.email} with an invite token. No public sign-up is
-                  available.
+                <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-white/80">
+                  The request for {form.organization || "your organization"} will
+                  be reviewed. If it is accepted, an invitation is sent to{" "}
+                  {form.email}.
                 </p>
                 <Link
                   to="/"
@@ -128,14 +128,14 @@ export default function RequestAccessPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.35, ease: "easeOut" }}
-                className="rounded-sm border border-white/15 bg-white/5 p-6 backdrop-blur-md md:p-8"
+                className="rounded-sm border border-white/15 bg-[#0839B0]/80 p-6 md:p-8"
               >
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-                  <p className="font-mono text-[11px] tracking-widest text-white/45 uppercase">
+                  <p className="font-mono text-[11px] tracking-widest text-white/80 uppercase">
                     Access request
                   </p>
                   <span className="rounded-sm border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[11px] tracking-wide text-[#9ec4ff]">
-                    get started
+                    invite-only
                   </span>
                 </div>
 

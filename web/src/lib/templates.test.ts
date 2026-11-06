@@ -25,7 +25,7 @@ describe("createTemplate", () => {
     const template = createTemplate("Invoice", "Invoice 2048");
     expect(template.alias).toBe("invoice-2048");
     expect(template.status).toBe("draft");
-    expect(template.fromEmail).toBe("acme@example.com");
+    expect(template.fromEmail).toBe("");
     expect(template.html).toBe("");
   });
 });

@@ -1,0 +1,20 @@
+# Envoy
+
+> Envoy is an open-source, self-hosted service that sends transactional email through Amazon SES v2. It runs as a FastAPI application with a PostgreSQL database and a web console.
+
+Access is by invitation. An administrator creates accounts and sets their sending limits.
+
+## Pages
+
+- [Overview](/): what Envoy does, with examples of domains, API keys and delivery events.
+- [Documentation](/docs): API reference for authentication, domains, sending and SES event ingestion.
+- [Request access](/request-access): form to ask an administrator for an account.
+- [Console sign-in](/console/login): sign-in page for existing accounts.
+
+## Features
+
+- Sending domains: each domain becomes an Amazon SES identity. Envoy lists the DKIM, SPF and DMARC records to publish and reads the verification status from SES.
+- API keys: shown once, stored as SHA-256 hashes, with live or sandbox mode, scopes and optional daily and monthly quotas.
+- Sending: `POST /api/v1/send` with a Bearer API key. The response contains a message ID.
+- Events: deliveries, bounces and complaints arrive from SES through Amazon SNS. Hard bounces and complaints add the address to the suppression list.
+- Templates and webhooks: stored per account. Webhook payloads are signed with HMAC-SHA256.

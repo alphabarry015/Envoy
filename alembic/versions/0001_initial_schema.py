@@ -18,9 +18,9 @@ down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-user_role = postgresql.ENUM("admin", "user", name="user_role")
-user_status = postgresql.ENUM("pending", "active", "suspended", name="user_status")
-domain_status = postgresql.ENUM("pending", "verified", "failed", name="domain_status")
+user_role = postgresql.ENUM("admin", "user", name="user_role", create_type=False)
+user_status = postgresql.ENUM("pending", "active", "suspended", name="user_status", create_type=False)
+domain_status = postgresql.ENUM("pending", "verified", "failed", name="domain_status", create_type=False)
 dkim_status = postgresql.ENUM(
     "NOT_STARTED",
     "PENDING",
@@ -28,6 +28,7 @@ dkim_status = postgresql.ENUM(
     "FAILED",
     "TEMPORARY_FAILURE",
     name="dkim_status",
+    create_type=False,
 )
 email_status = postgresql.ENUM(
     "queued",
@@ -38,6 +39,7 @@ email_status = postgresql.ENUM(
     "failed",
     "suppressed",
     name="email_status",
+    create_type=False,
 )
 suppression_reason = postgresql.ENUM(
     "hard_bounce",
@@ -45,6 +47,7 @@ suppression_reason = postgresql.ENUM(
     "unsubscribe",
     "manual",
     name="suppression_reason",
+    create_type=False,
 )
 
 

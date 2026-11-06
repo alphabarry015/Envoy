@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, func, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -28,7 +28,7 @@ class UserStatus(str, enum.Enum):
 
 
 class User(Base):
-    """Compte utilisateur créé exclusivement par invitation administrateur."""
+    """Compte Envoy. Miroir de auth.users pour la page Authentification Supabase."""
 
     __tablename__ = "users"
 
@@ -39,6 +39,7 @@ class User(Base):
         server_default=text("gen_random_uuid()"),
     )
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role", values_callable=lambda items: [item.value for item in items]),
@@ -117,12 +118,22 @@ class ApiKey(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     key_prefix: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     hashed_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, default="live", server_default="live")
+    scopes: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=lambda: ["send"],
+        server_default=text("""'["send"]'::jsonb"""),
+    )
+    daily_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    monthly_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=True,
         server_default=text("true"),
     )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

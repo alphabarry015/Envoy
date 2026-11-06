@@ -18,14 +18,13 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   type ConsoleDomain,
   type DnsRecord,
-  getStoredDomain,
-  markDomainVerified,
-  removeStoredDomain,
+  disconnectRemoteDomain,
+  fetchDomain,
   toDnsCsv,
-  updateStoredDomain,
+  verifyRemoteDomain,
 } from "../../lib/domains";
 import { BTN_GHOST_SM } from "../../lib/consoleUi";
-import { ScanLoadingButton } from "../ui/ScanLoading";
+import { PageLoading } from "../ui/ScanLoading";
 
 const BTN_GHOST = BTN_GHOST_SM;
 
@@ -69,9 +68,8 @@ function truncateMiddle(value: string, max = 42): string {
 export default function DomainDetailPage() {
   const { domainId = "" } = useParams();
   const navigate = useNavigate();
-  const [domain, setDomain] = useState<ConsoleDomain | null>(() =>
-    getStoredDomain(domainId),
-  );
+  const [domain, setDomain] = useState<ConsoleDomain | null>(null);
+  const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -79,9 +77,23 @@ export default function DomainDetailPage() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setDomain(getStoredDomain(domainId));
+    let cancelled = false;
+    setLoading(true);
     setMenuOpen(false);
     setCopied(null);
+    void fetchDomain(domainId)
+      .then((row) => {
+        if (!cancelled) setDomain(row);
+      })
+      .catch(() => {
+        if (!cancelled) setDomain(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [domainId]);
 
   useEffect(() => {
@@ -95,6 +107,12 @@ export default function DomainDetailPage() {
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [menuOpen]);
 
+  if (loading) {
+    return (
+      <PageLoading>Loading domain…</PageLoading>
+    );
+  }
+
   if (!domain) {
     return <Navigate to="/console/domains" replace />;
   }
@@ -102,18 +120,18 @@ export default function DomainDetailPage() {
   const current = domain;
   const activeStep = stepIndex(current, verifying);
 
-  function verifyDomain() {
+  async function verifyDomain() {
     if (verifying || current.status === "verified") return;
     setVerifying(true);
-    window.setTimeout(() => {
-      const updated = updateStoredDomain(current.id, markDomainVerified);
-      if (updated) setDomain(updated);
+    try {
+      setDomain(await verifyRemoteDomain(current.id));
+    } finally {
       setVerifying(false);
-    }, 1800);
+    }
   }
 
-  function removeDomain() {
-    removeStoredDomain(current.id);
+  async function removeDomain() {
+    await disconnectRemoteDomain(current.id);
     navigate("/console/domains", { replace: true });
   }
 
@@ -150,6 +168,9 @@ export default function DomainDetailPage() {
             <h2 className="mt-1 truncate font-mono text-xl font-semibold tracking-tight text-neutral-950 md:text-2xl">
               {domain.name}
             </h2>
+            <p className="mt-2 font-mono text-xs text-neutral-500">
+              {domain.mailFrom || `noreply@${domain.name}`}
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -159,20 +180,15 @@ export default function DomainDetailPage() {
                 Verified
               </span>
             ) : (
-              <ScanLoadingButton
-                loading={verifying}
-                loadingLabel={
-                  <>
-                    <RefreshCw className="size-3.5" aria-hidden="true" />
-                    Verifying…
-                  </>
-                }
-                idleClassName={BTN_GHOST}
+              <button
+                type="button"
+                className={BTN_GHOST}
                 onClick={verifyDomain}
+                disabled={verifying}
               >
                 <RefreshCw className="size-3.5" aria-hidden="true" />
-                Verify DKIM
-              </ScanLoadingButton>
+                {verifying ? "Verifying…" : "Verify DKIM"}
+              </button>
             )}
 
             <div className="relative" ref={menuRef}>

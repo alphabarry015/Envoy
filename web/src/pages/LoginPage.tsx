@@ -6,13 +6,13 @@ import { Link, Navigate, useNavigate } from "react-router-dom";
 import SiteHeader from "../components/SiteHeader";
 import FiberField from "../components/ui/FiberField";
 import SplitPillButton from "../components/ui/SplitPillButton";
-import { readSession, signIn } from "../lib/auth";
+import { acceptInvite, readSession, signIn } from "../lib/auth";
 
 const INPUT =
   "h-12 w-full rounded-sm border border-white/15 bg-white/5 px-5 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#7EB0FF] focus:ring-2 focus:ring-white/20";
 
 const LABEL =
-  "mb-2 block font-mono text-[11px] tracking-widest text-white/50 uppercase";
+  "mb-2 block font-mono text-[11px] tracking-widest text-white/80 uppercase";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -21,29 +21,41 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteToken, setInviteToken] = useState("");
+  const [invitePassword, setInvitePassword] = useState("");
+  const [invitePasswordConfirm, setInvitePasswordConfirm] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   if (existing) {
     return <Navigate to="/console/overview" replace />;
   }
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
+    setSubmitting(true);
     try {
-      // Dev-only mock gate — not production auth.
-      signIn(email, password);
+      await signIn(email, password);
       navigate("/console/overview", { replace: true });
-    } catch {
-      setMessage("Enter both email and password to open the console mock.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Sign in failed.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
-  function onActivate(event: FormEvent<HTMLFormElement>) {
+  async function onActivate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage(
-      "Invite tokens are issued by an administrator. Request access if you do not have one.",
-    );
+    setMessage(null);
+    setSubmitting(true);
+    try {
+      await acceptInvite(inviteToken, invitePassword, invitePasswordConfirm);
+      navigate("/console/overview", { replace: true });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Invite activation failed.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -51,23 +63,19 @@ export default function LoginPage() {
       <FiberField intensity={0.28} />
       <SiteHeader variant="overlay" />
 
-      <div className="relative z-10 mx-auto grid w-full max-w-7xl flex-1 items-center gap-12 px-5 py-16 md:px-8 md:py-20 lg:grid-cols-12 lg:gap-16 lg:py-24">
-        <div className="lg:col-span-5">
-          <p className="mb-6 font-mono text-xs tracking-widest text-white/50 uppercase">
+      <div className="relative z-10 mx-auto grid w-full max-w-[92rem] flex-1 items-center gap-8 px-4 py-8 sm:px-5 md:gap-12 md:px-8 md:py-20 lg:grid-cols-12 lg:gap-16 lg:py-24">
+        <div className="max-lg:order-2 lg:col-span-5">
+          <p className="mb-6 font-mono text-xs tracking-widest text-white/80 uppercase">
             <span aria-hidden="true">■ </span>
             Private console
           </p>
-          <p className="mb-4 rounded-sm border border-amber-300/40 bg-amber-400/15 px-3 py-2 text-xs text-amber-50">
-            UI mock only — any credentials unlock the console. Wire JWT / invites
-            before production.
-          </p>
-          <h1 className="max-w-xl text-4xl leading-tight font-semibold tracking-tight md:text-6xl">
-            Sign in to your{" "}
-            <span className="block">sovereign workspace.</span>
+          <h1 className="max-w-xl text-3xl leading-tight font-semibold tracking-tight sm:text-4xl md:text-6xl">
+            Sign in{" "}
+            <span className="block">to the console.</span>
           </h1>
-          <p className="mt-6 max-w-md text-base leading-relaxed text-white/70 md:text-lg">
-            Access is restricted to administrators and invited members. There is
-            no public sign-up — request access to join a provisioned stack.
+          <p className="mt-6 max-w-md text-base leading-relaxed text-white/80 md:text-lg">
+            The console is available to administrators and invited members.
+            There is no public sign-up.
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
@@ -85,7 +93,7 @@ export default function LoginPage() {
             </span>
           </div>
 
-          <p className="mt-10 text-sm text-white/55">
+          <p className="mt-10 text-sm text-white/80">
             Need a seat?{" "}
             <Link
               to="/request-access"
@@ -96,15 +104,15 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <div className="lg:col-span-7">
+        <div className="max-lg:order-1 lg:col-span-7">
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35, ease: "easeOut" }}
-            className="rounded-sm border border-white/15 bg-white/5 p-6 backdrop-blur-md md:p-8"
+            className="rounded-sm border border-white/15 bg-[#0839B0]/80 p-6 md:p-8"
           >
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-              <p className="font-mono text-[11px] tracking-widest text-white/45 uppercase">
+              <p className="font-mono text-[11px] tracking-widest text-white/80 uppercase">
                 Workspace login
               </p>
               <span className="rounded-sm border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[11px] tracking-wide text-[#9ec4ff]">
@@ -138,7 +146,7 @@ export default function LoginPage() {
                 />
               </label>
               <SplitPillButton
-                label="Sign In"
+                label={submitting ? "Signing in" : "Sign In"}
                 type="submit"
                 className="w-full justify-center"
               />
@@ -161,7 +169,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setInviteOpen((open) => !open)}
-                className="inline-flex items-center gap-2 text-sm text-white/55 transition-colors hover:text-white"
+                className="inline-flex items-center gap-2 text-sm text-white/80 transition-colors hover:text-white"
               >
                 <KeyRound className="size-3.5" aria-hidden="true" />
                 {inviteOpen
@@ -183,14 +191,39 @@ export default function LoginPage() {
                       <input
                         value={inviteToken}
                         onChange={(event) => setInviteToken(event.target.value)}
-                        placeholder="env_invite_…"
+                        placeholder="Invite token"
                         className={INPUT}
                         required
                       />
                     </label>
+                    <label className="block">
+                      <span className={LABEL}>Password</span>
+                      <input
+                        type="password"
+                        value={invitePassword}
+                        onChange={(event) => setInvitePassword(event.target.value)}
+                        autoComplete="new-password"
+                        className={INPUT}
+                        required
+                        minLength={10}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className={LABEL}>Confirm password</span>
+                      <input
+                        type="password"
+                        value={invitePasswordConfirm}
+                        onChange={(event) => setInvitePasswordConfirm(event.target.value)}
+                        autoComplete="new-password"
+                        className={INPUT}
+                        required
+                        minLength={10}
+                      />
+                    </label>
                     <button
                       type="submit"
-                      className="rounded-sm border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/10"
+                      disabled={submitting}
+                      className="rounded-sm border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/10 disabled:opacity-50"
                     >
                       Activate account
                     </button>

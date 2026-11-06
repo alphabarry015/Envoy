@@ -1,0 +1,195 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
+
+import { authHeader, readSession, signOut } from "../../lib/auth";
+import { BTN_PRIMARY, FIELD_COMPACT, KICKER } from "../../lib/consoleUi";
+import { PageLoading } from "../ui/ScanLoading";
+
+type Account = {
+  email: string;
+};
+
+type PasswordForm = {
+  current: string;
+  next: string;
+  confirm: string;
+};
+
+const EMPTY_FORM: PasswordForm = { current: "", next: "", confirm: "" };
+
+async function readError(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    if (typeof body.detail === "string") return body.detail;
+    if (Array.isArray(body.detail) && body.detail.length > 0) {
+      const first = body.detail[0] as { msg?: string };
+      if (typeof first.msg === "string") return first.msg;
+    }
+  } catch {
+    /* réponse non JSON */
+  }
+  return "Could not update the password.";
+}
+
+function signedInLabel(value: string | undefined): string {
+  if (!value) return "This browser";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "This browser";
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+export default function SettingsPage() {
+  const navigate = useNavigate();
+  const session = readSession();
+  const [account, setAccount] = useState<Account | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [form, setForm] = useState<PasswordForm>(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const baseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+    fetch(`${baseUrl}/api/v1/auth/me`, { headers: authHeader() })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load settings.");
+        return (await response.json()) as Account;
+      })
+      .then((body) => {
+        if (!cancelled) setAccount(body);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setLoadError(cause instanceof Error ? cause.message : "Could not load settings.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function submitPassword(event: FormEvent) {
+    event.preventDefault();
+    setFormError(null);
+    setSaved(false);
+    if (form.next !== form.confirm) {
+      setFormError("Passwords do not match.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const baseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+      const response = await fetch(`${baseUrl}/api/v1/auth/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify({
+          current_password: form.current,
+          new_password: form.next,
+          new_password_confirm: form.confirm,
+        }),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      setForm(EMPTY_FORM);
+      setSaved(true);
+    } catch (cause: unknown) {
+      setFormError(cause instanceof Error ? cause.message : "Could not update the password.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function logout() {
+    signOut();
+    navigate("/console/login", { replace: true });
+  }
+
+  if (!account) {
+    return (
+      <div>
+        {loadError ? <p className="text-sm text-red-600">{loadError}</p> : null}
+        {loadError ? null : (
+          <PageLoading>Loading…</PageLoading>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-7">
+        <p className={KICKER}>Password</p>
+        <p className="mt-3 text-sm text-neutral-500">
+          Signed in as <span className="font-medium text-neutral-950">{account.email}</span>. Use at least 10
+          characters.
+        </p>
+        <form className="mt-5 space-y-3" onSubmit={submitPassword}>
+          <label className="block">
+            <span className="mb-1.5 block text-xs text-neutral-500">Current password</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              required
+              value={form.current}
+              onChange={(event) => setForm((current) => ({ ...current, current: event.target.value }))}
+              className={FIELD_COMPACT}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs text-neutral-500">New password</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={10}
+              value={form.next}
+              onChange={(event) => setForm((current) => ({ ...current, next: event.target.value }))}
+              className={FIELD_COMPACT}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs text-neutral-500">Confirm new password</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={10}
+              value={form.confirm}
+              onChange={(event) => setForm((current) => ({ ...current, confirm: event.target.value }))}
+              className={FIELD_COMPACT}
+            />
+          </label>
+          {formError ? <p className="text-sm text-red-600">{formError}</p> : null}
+          {saved ? <p className="text-sm text-emerald-700">Password updated.</p> : null}
+          <button type="submit" className={BTN_PRIMARY} disabled={saving}>
+            {saving ? "Saving…" : "Update password"}
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-7">
+        <p className={KICKER}>Session</p>
+        <dl className="mt-5 divide-y divide-neutral-200">
+          <div className="flex flex-wrap items-baseline justify-between gap-3 py-3">
+            <dt className="text-sm text-neutral-500">Browser</dt>
+            <dd className="text-sm font-medium text-neutral-950">This device</dd>
+          </div>
+          <div className="flex flex-wrap items-baseline justify-between gap-3 py-3">
+            <dt className="text-sm text-neutral-500">Signed in</dt>
+            <dd className="text-sm font-medium text-neutral-950">{signedInLabel(session?.signedInAt)}</dd>
+          </div>
+        </dl>
+        <button
+          type="button"
+          onClick={logout}
+          className="mt-4 inline-flex items-center rounded-sm border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+        >
+          Sign out
+        </button>
+      </section>
+    </div>
+  );
+}

@@ -1,4 +1,4 @@
-/** Safe JSON read/write for mock console persistence (localStorage / sessionStorage). */
+/** Safe JSON read/write for browser storage. */
 
 export function readJsonStorage<T>(
   storage: Storage,

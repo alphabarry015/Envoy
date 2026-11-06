@@ -1,4 +1,14 @@
 import activation from "./reactEmailGallery/activation.html?raw";
+import airbnbReview from "./reactEmailGallery/airbnb-review.html?raw";
+import dropboxResetPassword from "./reactEmailGallery/dropbox-reset-password.html?raw";
+import nikeReceipt from "./reactEmailGallery/nike-receipt.html?raw";
+import notionMagicLink from "./reactEmailGallery/notion-magic-link.html?raw";
+import productUpdate from "./reactEmailGallery/product-update.html?raw";
+import stackOverflowTips from "./reactEmailGallery/stack-overflow-tips.html?raw";
+import stripeWelcome from "./reactEmailGallery/stripe-welcome.html?raw";
+import subscriptionUpdate from "./reactEmailGallery/subscription-update.html?raw";
+import textOnly from "./reactEmailGallery/text-only.html?raw";
+import vercelInviteUser from "./reactEmailGallery/vercel-invite-user.html?raw";
 import arcaneAbandonedCart from "./reactEmailGallery/arcane-abandoned-cart.html?raw";
 import arcaneNewsletter from "./reactEmailGallery/arcane-newsletter.html?raw";
 import arcaneOrderConfirmation from "./reactEmailGallery/arcane-order-confirmation.html?raw";
@@ -128,5 +138,75 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     alias: "halo-welcome",
     subject: "Welcome to Halo",
     html: studioWelcome,
+  },
+  {
+    id: "notion-magic-link",
+    name: "Notion magic link",
+    alias: "notion-magic-link",
+    subject: "Log in with this magic link",
+    html: notionMagicLink,
+  },
+  {
+    id: "stack-overflow-tips",
+    name: "Stack Overflow tips",
+    alias: "stack-overflow-tips",
+    subject: "Stack Overflow tips for searching",
+    html: stackOverflowTips,
+  },
+  {
+    id: "vercel-invite-user",
+    name: "Vercel invite",
+    alias: "vercel-invite",
+    subject: "Join Alan on Vercel",
+    html: vercelInviteUser,
+  },
+  {
+    id: "nike-receipt",
+    name: "Nike receipt",
+    alias: "nike-receipt",
+    subject: "Your Nike order summary",
+    html: nikeReceipt,
+  },
+  {
+    id: "dropbox-reset-password",
+    name: "Dropbox reset",
+    alias: "dropbox-reset-password",
+    subject: "Dropbox reset your password",
+    html: dropboxResetPassword,
+  },
+  {
+    id: "airbnb-review",
+    name: "Airbnb review",
+    alias: "airbnb-review",
+    subject: "Read Alex's review",
+    html: airbnbReview,
+  },
+  {
+    id: "stripe-welcome",
+    name: "Stripe welcome",
+    alias: "stripe-welcome",
+    subject: "You're ready to take payments with Stripe",
+    html: stripeWelcome,
+  },
+  {
+    id: "text-only",
+    name: "Text only",
+    alias: "text-only",
+    subject: "A note from Barebones",
+    html: textOnly,
+  },
+  {
+    id: "product-update",
+    name: "Product update",
+    alias: "product-update",
+    subject: "What's new at Barebones",
+    html: productUpdate,
+  },
+  {
+    id: "subscription-update",
+    name: "Plan renewal",
+    alias: "plan-renewal",
+    subject: "Your Collage plan renewed (Pro)",
+    html: subscriptionUpdate,
   },
 ];

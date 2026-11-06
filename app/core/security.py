@@ -23,15 +23,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def generate_api_key() -> tuple[str, str, str]:
-    """Génère une clé API `envoy_live_...`.
+def generate_api_key(mode: str = "live") -> tuple[str, str, str]:
+    """Génère une clé API `envoy_live_...` ou `envoy_test_...`.
 
     Returns:
         (clé en clair, empreinte SHA-256, préfixe affichable)
     """
+    prefix = "envoy_test_" if mode == "sandbox" else settings.api_key_prefix
     secret = secrets.token_urlsafe(32)
-    raw_key = f"{settings.api_key_prefix}{secret}"
-    return raw_key, hash_api_key(raw_key), raw_key[: len(settings.api_key_prefix) + 8]
+    raw_key = f"{prefix}{secret}"
+    visible = f"{raw_key[:18]}…"
+    return raw_key, hash_api_key(raw_key), visible
 
 
 def hash_api_key(raw_key: str) -> str:

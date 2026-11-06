@@ -2,16 +2,31 @@ import "@react-email/editor/themes/default.css";
 
 import { EmailEditor, type EmailEditorRef } from "@react-email/editor";
 import type { Content, Editor } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey } from "@tiptap/pm/state";
+import { useCurrentEditor, useEditorState } from "@tiptap/react";
 import type { EditorView } from "@tiptap/pm/view";
 import type { DragHandleRule } from "@tiptap/extension-drag-handle";
 import { DragHandle } from "@tiptap/extension-drag-handle-react";
 import {
+  BubbleMenu,
+  BubbleMenuAlignCenter,
+  BubbleMenuAlignLeft,
+  BubbleMenuAlignRight,
+  BubbleMenuBold,
+  BubbleMenuCode,
+  BubbleMenuItalic,
+  BubbleMenuItemGroup,
+  BubbleMenuLinkSelector,
+  BubbleMenuNodeSelector,
+  BubbleMenuStrike,
+  BubbleMenuUnderline,
+  BubbleMenuUppercase,
   FOUR_COLUMNS,
   TEXT,
   THREE_COLUMNS,
   TWO_COLUMNS,
   type SlashCommandItem,
+  type TriggerParams,
 } from "@react-email/editor/ui";
 import MonacoEditor from "@monaco-editor/react";
 import {
@@ -20,6 +35,7 @@ import {
   AlignRight,
   ArrowLeft,
   Braces,
+  Check,
   ChevronDown,
   CodeXml,
   Columns2,
@@ -27,7 +43,9 @@ import {
   Columns4,
   GripVertical,
   Image,
+  Link2,
   Plus,
+  Unlink,
   Square,
   Type,
   X,
@@ -58,10 +76,11 @@ import {
   type TemplateVariable,
   type VariableType,
   extractVariables,
-  getStoredTemplate,
-  readStoredTemplates,
-  writeStoredTemplates,
+  fetchTemplate,
+  slugAlias,
+  updateRemoteTemplate,
 } from "../../lib/templates";
+import { PageLoading } from "../ui/ScanLoading";
 
 const VARIABLE_TYPES: { id: VariableType; label: string }[] = [
   { id: "string", label: "String" },
@@ -69,128 +88,305 @@ const VARIABLE_TYPES: { id: VariableType; label: string }[] = [
   { id: "date", label: "Date" },
 ];
 
-const DRAG_BLOCKS = new Set(["twoColumns", "threeColumns", "fourColumns"]);
+const COLUMN_GROUPS = new Set(["twoColumns", "threeColumns", "fourColumns"]);
 
-const buttonAlignKey = new PluginKey("envoyButtonAlign");
+const columnDropKey = new PluginKey("envoyColumnDrop");
+const dragHandleHoldKey = new PluginKey("envoyDragHandleHold");
 
-function alignmentAt(clientX: number, row: HTMLElement): "left" | "center" | "right" {
-  const box = row.getBoundingClientRect();
-  const ratio = box.width > 0 ? (clientX - box.left) / box.width : 0;
-  if (ratio < 1 / 3) return "left";
-  if (ratio < 2 / 3) return "center";
-  return "right";
-}
+type ViewDesc = { node?: { type: { name: string } }; posBefore?: number };
 
-function buttonPos(view: EditorView, anchor: HTMLElement): number | null {
-  const pos = view.posAtDOM(anchor, 0);
-  const resolved = view.state.doc.resolve(pos);
-  for (let depth = resolved.depth; depth > 0; depth -= 1) {
-    if (resolved.node(depth).type.name === "button") return resolved.before(depth);
+function nodePos(view: EditorView, anchor: HTMLElement, typeName: string): number | null {
+  let current: HTMLElement | null = anchor;
+  while (current && current !== view.dom) {
+    const desc = (current as HTMLElement & { pmViewDesc?: ViewDesc }).pmViewDesc;
+    if (desc?.node?.type.name === typeName && typeof desc.posBefore === "number") return desc.posBefore;
+    current = current.parentElement;
   }
   return null;
 }
 
-function buttonAlignPlugin() {
+function posInside(view: EditorView, containerPos: number, pos: number) {
+  const node = view.state.doc.nodeAt(containerPos);
+  return Boolean(node && pos > containerPos && pos < containerPos + node.nodeSize);
+}
+
+function columnUnderPointer(view: EditorView, event: DragEvent): number | null {
+  const hit = document.elementFromPoint(event.clientX, event.clientY);
+  const direct = hit instanceof Element ? hit.closest(".node-column") : null;
+  if (direct instanceof HTMLElement) {
+    const pos = nodePos(view, direct, "columnsColumn");
+    if (pos != null) return pos;
+  }
+  let best: { pos: number; dist: number } | null = null;
+  for (const node of view.dom.querySelectorAll(".node-column")) {
+    if (!(node instanceof HTMLElement)) continue;
+    const box = node.getBoundingClientRect();
+    if (event.clientY < box.top || event.clientY > box.bottom) continue;
+    const dist =
+      event.clientX < box.left ? box.left - event.clientX : event.clientX > box.right ? event.clientX - box.right : 0;
+    const pos = nodePos(view, node, "columnsColumn");
+    if (pos == null) continue;
+    if (!best || dist < best.dist) best = { pos, dist };
+  }
+  return best && best.dist <= 28 ? best.pos : null;
+}
+
+function columnDepth(view: EditorView, pos: number) {
+  const resolved = view.state.doc.resolve(Math.min(pos, view.state.doc.content.size));
+  let depth = 0;
+  for (let level = resolved.depth; level > 0; level -= 1) {
+    if (COLUMN_GROUPS.has(resolved.node(level).type.name)) depth += 1;
+  }
+  return depth;
+}
+
+function moveIntoColumn(view: EditorView, columnPos: number) {
+  const dragging = view.dragging as { node?: NodeSelection } | null;
+  const block = dragging?.node?.node;
+  if (!dragging?.node || !block) return false;
+  if (COLUMN_GROUPS.has(block.type.name) && columnDepth(view, columnPos) >= 3) return false;
+  const source = dragging.node;
+  const tr = view.state.tr;
+  const parent = tr.doc.resolve(source.from).parent;
+  if (parent.type.name === "columnsColumn" && parent.childCount === 1) {
+    tr.replaceWith(source.from, source.to, tr.doc.type.schema.nodes.paragraph.create());
+  } else {
+    source.replace(tr);
+  }
+  const mapped = tr.mapping.map(columnPos);
+  const column = tr.doc.nodeAt(mapped);
+  if (!column || column.type.name !== "columnsColumn") return false;
+  const start = mapped + 1;
+  const end = mapped + column.nodeSize - 1;
+  const empty =
+    column.childCount === 1 && column.firstChild?.isTextblock === true && column.firstChild.content.size === 0;
+  if (empty) tr.replaceWith(start, end, block);
+  else tr.insert(end, block);
+  view.dispatch(tr.scrollIntoView());
+  return true;
+}
+
+function alignDraggedButton(view: EditorView, event: DragEvent) {
+  const dragging = view.dragging as { node?: NodeSelection } | null;
+  const selection = dragging?.node;
+  if (!selection || selection.node.type.name !== "button") return false;
+  const dom = view.nodeDOM(selection.from);
+  if (!(dom instanceof HTMLElement)) return false;
+  const link = dom.querySelector(".node-button");
+  const box = (link instanceof HTMLElement ? link : dom).getBoundingClientRect();
+  if (event.clientY < box.top - 12 || event.clientY > box.bottom + 12) return false;
+  const container = dom.closest(".node-column") ?? view.dom;
+  const bounds = container.getBoundingClientRect();
+  if (bounds.width <= 0) return false;
+  const ratio = (event.clientX - bounds.left) / bounds.width;
+  const alignment = ratio < 1 / 3 ? "left" : ratio > 2 / 3 ? "right" : "center";
+  if (selection.node.attrs.alignment === alignment) return false;
+  view.dispatch(view.state.tr.setNodeAttribute(selection.from, "alignment", alignment));
+  return true;
+}
+
+function dragHandleHoldPlugin() {
   return new Plugin({
-    key: buttonAlignKey,
+    key: dragHandleHoldKey,
     view(editorView) {
-      const handles = new Map<HTMLElement, HTMLButtonElement>();
-      let frame = 0;
-
-      function position(handle: HTMLElement, anchor: HTMLElement, layer: HTMLElement) {
-        const box = anchor.getBoundingClientRect();
-        const parent = layer.getBoundingClientRect();
-        handle.style.left = `${box.left - parent.left + layer.scrollLeft - 32}px`;
-        handle.style.top = `${box.top - parent.top + layer.scrollTop + (box.height - 28) / 2}px`;
-      }
-
-      function sync() {
-        const layer = editorView.dom.parentElement;
-        if (!layer || editorView.dom.offsetParent === null) {
-          handles.forEach((handle) => handle.remove());
-          handles.clear();
-          return;
-        }
-        const seen = new Set<HTMLElement>();
-        editorView.dom.querySelectorAll("a.node-button").forEach((node) => {
-          if (!(node instanceof HTMLElement)) return;
-          const row = node.parentElement;
-          if (!(row instanceof HTMLElement)) return;
-          seen.add(node);
-          let handle = handles.get(node);
-          if (!handle) {
-            handle = document.createElement("button");
-            handle.type = "button";
-            handle.className = "envoy-button-grip";
-            handle.setAttribute("aria-label", "Déplacer");
-            handle.innerHTML =
-              '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>';
-            handle.addEventListener("pointerdown", (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              handle?.setPointerCapture(event.pointerId);
-              const move = (pointer: PointerEvent) => {
-                row.style.textAlign = alignmentAt(pointer.clientX, row);
-                position(handle!, node, layer);
-              };
-              const up = (pointer: PointerEvent) => {
-                handle?.removeEventListener("pointermove", move);
-                handle?.removeEventListener("pointerup", up);
-                const alignment = alignmentAt(pointer.clientX, row);
-                row.style.textAlign = "";
-                const pos = buttonPos(editorView, node);
-                const button = pos == null ? null : editorView.state.doc.nodeAt(pos);
-                if (button && button.attrs.alignment !== alignment && pos != null) {
-                  editorView.dispatch(
-                    editorView.state.tr.setNodeMarkup(pos, null, {
-                      ...button.attrs,
-                      alignment,
-                    }),
-                  );
-                }
-                position(handle!, node, layer);
-              };
-              handle?.addEventListener("pointermove", move);
-              handle?.addEventListener("pointerup", up);
-            });
-            layer.appendChild(handle);
-            handles.set(node, handle);
-          }
-          position(handle, node, layer);
-        });
-        for (const [anchor, handle] of handles) {
-          if (seen.has(anchor)) continue;
-          handle.remove();
-          handles.delete(anchor);
-        }
-      }
-
-      function schedule() {
-        cancelAnimationFrame(frame);
-        frame = requestAnimationFrame(sync);
-      }
-
-      const layer = editorView.dom.parentElement;
-      layer?.addEventListener("scroll", schedule, { passive: true });
-      schedule();
-
+      const onLeave = (event: globalThis.MouseEvent) => {
+        const handle = editorView.dom.parentElement?.querySelector(".envoy-drag-handle");
+        if (!(handle instanceof HTMLElement) || handle.style.visibility === "hidden") return;
+        const next = event.relatedTarget;
+        const onto = next instanceof Element && Boolean(next.closest(".envoy-drag-handle"));
+        const box = handle.getBoundingClientRect();
+        const near =
+          event.clientX >= box.left - 12 &&
+          event.clientX <= box.right + 28 &&
+          event.clientY >= box.top - 12 &&
+          event.clientY <= box.bottom + 12;
+        if (onto || near) event.stopImmediatePropagation();
+      };
+      editorView.dom.addEventListener("mouseleave", onLeave, true);
       return {
-        update: schedule,
         destroy() {
-          cancelAnimationFrame(frame);
-          layer?.removeEventListener("scroll", schedule);
-          handles.forEach((handle) => handle.remove());
-          handles.clear();
+          editorView.dom.removeEventListener("mouseleave", onLeave, true);
         },
       };
     },
   });
 }
 
+function columnDropPlugin() {
+  return new Plugin({
+    key: columnDropKey,
+    props: {
+      handleDrop(view, event) {
+        const dragging = view.dragging as { node?: NodeSelection } | null;
+        const source = dragging?.node;
+        if (!source) return false;
+        const columnPos = columnUnderPointer(view, event);
+        if (
+          columnPos != null &&
+          !posInside(view, source.from, columnPos) &&
+          !posInside(view, columnPos, source.from)
+        ) {
+          const pointed = view.posAtCoords({ left: event.clientX, top: event.clientY });
+          if (pointed && posInside(view, columnPos, pointed.pos)) return false;
+          return moveIntoColumn(view, columnPos);
+        }
+        return alignDraggedButton(view, event);
+      },
+    },
+  });
+}
+
+const textMenuKey = new PluginKey("envoyTextMenu");
+
+function showFormatMenu({ editor, state }: TriggerParams) {
+  if (editor.isActive("image") || editor.isActive("horizontalRule")) return false;
+  if (editor.isActive("button")) return true;
+  if (state.selection instanceof NodeSelection) return false;
+  return state.selection.content().size > 0;
+}
+
+function linkValue(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "#") return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:" || url.protocol === "tel:") {
+      return trimmed;
+    }
+    return null;
+  } catch {
+    if (trimmed.includes(".") && !trimmed.includes(" ")) return `https://${trimmed}`;
+    return null;
+  }
+}
+
+function ButtonHrefControl() {
+  const { editor } = useCurrentEditor();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const href =
+    useEditorState({
+      editor,
+      selector: ({ editor: current }) => {
+        const raw = current?.getAttributes("button").href ?? "";
+        return raw === "#" ? "" : String(raw);
+      },
+    }) ?? "";
+
+  useEffect(() => {
+    if (open) setValue(href);
+  }, [open, href]);
+
+  if (!editor) return null;
+
+  function apply(next: string) {
+    editor?.chain().focus().updateAttributes("button", { href: next || "#" }).run();
+    setOpen(false);
+  }
+
+  return (
+    <div
+      data-re-link-selector=""
+      {...(open ? { "data-open": "" } : {})}
+      {...(href ? { "data-has-link": "" } : {})}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-label="Add link"
+        aria-pressed={Boolean(href)}
+        data-re-link-selector-trigger=""
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Link2 aria-hidden="true" />
+      </button>
+      {open ? (
+        <form
+          data-re-link-selector-form=""
+          onMouseDown={(event) => event.stopPropagation()}
+          onSubmit={(event) => {
+            event.preventDefault();
+            apply(linkValue(value) ?? "");
+          }}
+        >
+          <input
+            data-re-link-selector-input=""
+            value={value}
+            placeholder="Paste a link"
+            onChange={(event) => setValue(event.target.value)}
+            onFocus={(event) => event.stopPropagation()}
+          />
+          {href ? (
+            <button
+              type="button"
+              aria-label="Remove link"
+              data-re-link-selector-unlink=""
+              onClick={() => apply("")}
+            >
+              <Unlink aria-hidden="true" />
+            </button>
+          ) : (
+            <button type="submit" aria-label="Apply link" data-re-link-selector-apply="">
+              <Check aria-hidden="true" />
+            </button>
+          )}
+        </form>
+      ) : null}
+    </div>
+  );
+}
+
+function MenuLink() {
+  const { editor } = useCurrentEditor();
+  const onButton = useEditorState({
+    editor,
+    selector: ({ editor: current }) => current?.isActive("button") ?? false,
+  });
+  if (onButton) return <ButtonHrefControl />;
+  return <BubbleMenuLinkSelector />;
+}
+
+function FormatMenu() {
+  const { editor } = useCurrentEditor();
+  const code = useEditorState({
+    editor,
+    selector: ({ editor: current }) => current?.isActive("code") ?? false,
+  });
+  if (code) {
+    return (
+      <>
+        <BubbleMenuNodeSelector />
+        <BubbleMenuCode />
+      </>
+    );
+  }
+  return (
+    <>
+      <BubbleMenuNodeSelector />
+      <MenuLink />
+      <BubbleMenuItemGroup>
+        <BubbleMenuBold />
+        <BubbleMenuItalic />
+        <BubbleMenuUnderline />
+        <BubbleMenuStrike />
+        <BubbleMenuCode />
+        <BubbleMenuUppercase />
+      </BubbleMenuItemGroup>
+      <BubbleMenuItemGroup>
+        <BubbleMenuAlignLeft />
+        <BubbleMenuAlignCenter />
+        <BubbleMenuAlignRight />
+      </BubbleMenuItemGroup>
+    </>
+  );
+}
+
 const COLUMN_DRAG_RULES: DragHandleRule[] = [
   {
-    id: "onlyButtonAndTable",
-    evaluate: ({ node }) => (DRAG_BLOCKS.has(node.type.name) ? 0 : 1000),
+    id: "skipColumnCell",
+    evaluate: ({ node }) => (node.type.name === "columnsColumn" ? 1000 : 0),
   },
 ];
 
@@ -210,9 +406,9 @@ export default function TemplateDetailPage() {
   const editorRef = useRef<EmailEditorRef>(null);
   const htmlInputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef({ from: 1, to: 1 });
-  const [template, setTemplate] = useState<ConsoleTemplate | null>(() =>
-    getStoredTemplate(templateId),
-  );
+  const [template, setTemplate] = useState<ConsoleTemplate | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [empty, setEmpty] = useState(true);
   const [showHtml, setShowHtml] = useState(false);
   const [htmlDraft, setHtmlDraft] = useState("");
@@ -223,9 +419,12 @@ export default function TemplateDetailPage() {
   const [variableModal, setVariableModal] = useState(false);
   const [blockMenu, setBlockMenu] = useState(false);
   const [dragEditor, setDragEditor] = useState<{ id: string; editor: Editor } | null>(null);
+  const buttonAnchorRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    setTemplate(getStoredTemplate(templateId));
+    let cancelled = false;
+    setLoading(true);
+    setTemplate(null);
     setEmpty(true);
     setShowHtml(false);
     setHtmlDraft("");
@@ -235,14 +434,28 @@ export default function TemplateDetailPage() {
     setVariableMenu(false);
     setVariableModal(false);
     setBlockMenu(false);
+    fetchTemplate(templateId)
+      .then((row) => {
+        if (!cancelled) setTemplate(row);
+      })
+      .catch(() => {
+        if (!cancelled) setTemplate(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [templateId]);
 
+  if (loading) return <PageLoading>Loading template</PageLoading>;
   if (!template) {
     return <Navigate to="/console/templates" replace />;
   }
 
   const current = template;
-  const initialContent = (current.document ?? current.html) as Content;
+  const initialContent = (current.document ?? emailHtmlToEditorHtml(current.html)) as Content;
 
   function update(patch: Partial<ConsoleTemplate>) {
     setTemplate((item) => (item ? { ...item, ...patch } : item));
@@ -274,7 +487,7 @@ export default function TemplateDetailPage() {
   function placeCaret(event: MouseEvent) {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
-    if (target.closest("input, textarea, button, a")) return;
+    if (target.closest("input, textarea, button, a, .envoy-drag-handle")) return;
     const editor = editorRef.current?.editor;
     if (!editor) return;
     const prose = editor.view.dom;
@@ -332,20 +545,21 @@ export default function TemplateDetailPage() {
     setVariableMenu(false);
   }
 
-  function saveVariable(variable: TemplateVariable) {
+  async function saveVariable(variable: TemplateVariable) {
     const variables = [
       ...current.variables.filter((item) => item.name !== variable.name),
       variable,
     ].sort((left, right) => left.name.localeCompare(right.name));
     const next = { ...current, variables, updatedAt: new Date().toISOString() };
-    setTemplate(next);
-    writeStoredTemplates(
-      readStoredTemplates().map((item) =>
-        item.id === next.id ? { ...item, ...next } : item,
-      ),
-    );
-    insertVariable(variable.name);
-    setVariableModal(false);
+    setSaveError(null);
+    try {
+      const saved = await updateRemoteTemplate(next);
+      setTemplate(saved);
+      insertVariable(variable.name);
+      setVariableModal(false);
+    } catch (caught) {
+      setSaveError(caught instanceof Error ? caught.message : "Could not save this variable.");
+    }
   }
 
   function insertImage() {
@@ -393,14 +607,15 @@ export default function TemplateDetailPage() {
       status,
       updatedAt: new Date().toISOString(),
     };
-    writeStoredTemplates(
-      readStoredTemplates().map((item) =>
-        item.id === current.id ? nextTemplate : item,
-      ),
-    );
-    if (editor) savedDocument.current = JSON.stringify(editor.getJSON());
-    setTemplate(nextTemplate);
-    setDirty(false);
+    setSaveError(null);
+    try {
+      const saved = await updateRemoteTemplate(nextTemplate);
+      if (editor) savedDocument.current = JSON.stringify(editor.getJSON());
+      setTemplate(saved);
+      setDirty(false);
+    } catch (caught) {
+      setSaveError(caught instanceof Error ? caught.message : "Could not save this template.");
+    }
   }
 
   async function openPreview() {
@@ -439,7 +654,7 @@ export default function TemplateDetailPage() {
 
   return (
     <div className="envoy-template-editor relative flex h-full min-h-0 flex-col bg-white text-neutral-950">
-      <header className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-neutral-200 bg-white px-5 py-3 text-neutral-950">
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-neutral-200 bg-white px-3 py-3 text-neutral-950 sm:px-5">
         <Link
           to="/console/templates"
           aria-label="Retour"
@@ -456,7 +671,7 @@ export default function TemplateDetailPage() {
             </span>
           </span>
         </Link>
-        <div className="flex min-w-0 items-center justify-center text-sm">
+        <div className="flex min-w-0 flex-1 items-center text-sm">
           <Link to="/console/templates" className="shrink-0 text-neutral-500 hover:text-[#0A4BD6]">
             Templates
           </Link>
@@ -466,11 +681,11 @@ export default function TemplateDetailPage() {
             onChange={(event) => update({ name: event.target.value })}
             aria-label="Template name"
             size={Math.max((current.name || "Untitled").length, 1)}
-            className="max-w-56 min-w-0 bg-transparent text-sm text-neutral-950 outline-none placeholder:text-neutral-400 [field-sizing:content]"
+            className="max-w-[9rem] min-w-0 bg-transparent text-sm text-neutral-950 outline-none placeholder:text-neutral-400 sm:max-w-56 [field-sizing:content]"
             placeholder="Untitled"
           />
         </div>
-        <div className="flex items-center justify-self-end gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
             onClick={() => void openPreview()}
@@ -487,9 +702,13 @@ export default function TemplateDetailPage() {
           </button>
         </div>
       </header>
+      {saveError ? (
+        <p className="border-b border-red-200 bg-red-50 px-5 py-2 text-sm text-red-700">{saveError}</p>
+      ) : null}
 
       {showHtml ? (
         <HtmlCode
+          name={current.alias || current.name}
           html={htmlDraft}
           onChange={(value) => {
             setHtmlDraft(value);
@@ -502,8 +721,8 @@ export default function TemplateDetailPage() {
         className={showHtml ? "hidden" : "relative flex min-h-0 flex-1"}
         onMouseDown={placeCaret}
       >
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10">
-          <div className="pointer-events-auto mx-auto w-[600px] max-w-full pt-8">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 bg-white">
+          <div className="pointer-events-auto mx-auto w-full max-w-[600px] px-4 pt-6 sm:px-0 sm:pt-8">
             <div className="grid gap-x-10 border-b border-neutral-200 py-2 sm:grid-cols-2">
               <MetaField label="From">
                 <input
@@ -583,8 +802,11 @@ export default function TemplateDetailPage() {
             setDragEditor(editor ? { id: current.id, editor } : null);
             if (!editor) return;
             savedDocument.current = JSON.stringify(editor.getJSON());
-            if (!editor.state.plugins.some((plugin) => plugin.spec.key === buttonAlignKey)) {
-              editor.registerPlugin(buttonAlignPlugin());
+            if (!editor.state.plugins.some((plugin) => plugin.spec.key === columnDropKey)) {
+              editor.registerPlugin(columnDropPlugin());
+            }
+            if (!editor.state.plugins.some((plugin) => plugin.spec.key === dragHandleHoldKey)) {
+              editor.registerPlugin(dragHandleHoldPlugin());
             }
             const save = () => {
               const { from, to } = editor.state.selection;
@@ -602,6 +824,9 @@ export default function TemplateDetailPage() {
             }
           }}
         >
+          <BubbleMenu className="envoy-text-menu" pluginKey={textMenuKey} trigger={showFormatMenu}>
+            <FormatMenu />
+          </BubbleMenu>
           {dragEditor && dragEditor.id === current.id && !showHtml ? (
             <DragHandle
               editor={dragEditor.editor}
@@ -609,6 +834,27 @@ export default function TemplateDetailPage() {
               nested={{
                 edgeDetection: "none",
                 rules: COLUMN_DRAG_RULES,
+              }}
+              onNodeChange={({ editor, node, pos }) => {
+                if (node?.type.name !== "button" || pos < 0) {
+                  buttonAnchorRef.current = null;
+                  return;
+                }
+                const dom = editor.view.nodeDOM(pos);
+                const link = dom instanceof HTMLElement ? dom.querySelector(".node-button") : null;
+                buttonAnchorRef.current = link instanceof HTMLElement ? link : null;
+              }}
+              getReferencedVirtualElement={() => {
+                const link = buttonAnchorRef.current;
+                if (!link) return null;
+                return {
+                  getBoundingClientRect() {
+                    const box = link.getBoundingClientRect();
+                    const grip = 28;
+                    const top = box.top + Math.max(0, (box.height - grip) / 2);
+                    return new DOMRect(box.left, top, 0, grip);
+                  },
+                };
               }}
             >
               <span
@@ -803,64 +1049,100 @@ function BlockChoice({
 }
 
 function HtmlCode({
+  name,
   html,
   onChange,
 }: {
+  name: string;
   html: string;
   onChange: (value: string) => void;
 }) {
+  const fileName = slugAlias(name) || "template";
   const [{ markup, stylesheet }, setParts] = useState(() => splitHtmlCss(html));
+  const partsRef = useRef({ markup, stylesheet });
+  const [file, setFile] = useState<"html" | "css">("html");
 
   function changeMarkup(markup: string) {
-    setParts((parts) => ({ ...parts, markup }));
-    onChange(joinHtmlCss(markup, stylesheet));
+    const next = { ...partsRef.current, markup };
+    partsRef.current = next;
+    setParts(next);
+    onChange(joinHtmlCss(next.markup, next.stylesheet));
   }
 
   function changeStylesheet(stylesheet: string) {
-    setParts((parts) => ({ ...parts, stylesheet }));
-    onChange(joinHtmlCss(markup, stylesheet));
+    const next = { ...partsRef.current, stylesheet };
+    partsRef.current = next;
+    setParts(next);
+    onChange(joinHtmlCss(next.markup, next.stylesheet));
   }
 
   return (
     <div className="html-editor flex h-full min-h-0 flex-1 bg-white">
       <div className="w-20 shrink-0" aria-hidden="true" />
-      <div className="grid h-full min-h-0 min-w-0 flex-1 grid-cols-1 grid-rows-2 md:grid-cols-2 md:grid-rows-1">
-        <SourceEditor
-          label="HTML"
-          language="html"
-          value={markup}
-          onChange={changeMarkup}
+      <aside className="flex w-52 shrink-0 flex-col border-r border-neutral-200 bg-neutral-50 py-3">
+        <p className="px-3 pb-2 font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
+          {fileName}
+        </p>
+        <FileRow
+          label={`${fileName}.html`}
+          pressed={file === "html"}
+          onClick={() => setFile("html")}
         />
-        <SourceEditor
-          label="CSS"
-          language="css"
-          value={stylesheet}
-          onChange={changeStylesheet}
-          className="border-t border-neutral-200 md:border-t-0 md:border-l"
+        <FileRow
+          label={`${fileName}.css`}
+          pressed={file === "css"}
+          onClick={() => setFile("css")}
         />
-      </div>
+      </aside>
+      <SourceEditor
+        key={file}
+        language={file === "html" ? "html" : "css"}
+        value={file === "html" ? markup : stylesheet}
+        onChange={file === "html" ? changeMarkup : changeStylesheet}
+      />
     </div>
   );
 }
 
-function SourceEditor({
+function FileRow({
   label,
+  pressed,
+  onClick,
+}: {
+  label: string;
+  pressed: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      className={`mx-2 rounded-sm px-2 py-1.5 text-left font-mono text-xs ${
+        pressed
+          ? "bg-[#0A4BD6]/10 text-[#0A4BD6]"
+          : "text-neutral-600 hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function SourceEditor({
   language,
   value,
   onChange,
-  className = "",
 }: {
-  label: string;
   language: "html" | "css";
   value: string;
   onChange: (value: string) => void;
-  className?: string;
 }) {
+  const frameRef = useRef<HTMLDivElement>(null);
+
   return (
-    <section className={`flex h-full min-h-0 min-w-0 flex-col overflow-hidden ${className}`}>
-      <p className={`border-b border-neutral-200 px-6 py-3 ${KICKER}`}>{label}</p>
-      <div className="relative min-h-0 flex-1">
-        <div className="absolute inset-0">
+    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div ref={frameRef} className="min-h-0 flex-1">
         <MonacoEditor
           height="100%"
           language={language}
@@ -871,16 +1153,20 @@ function SourceEditor({
           }
           onChange={(next) => onChange(next ?? "")}
           onMount={(editor) => {
-            const parent = editor.getDomNode()?.parentElement;
-            if (!parent) return;
+            const frame = frameRef.current;
+            if (!frame) return;
             const layout = () => {
-              const box = parent.getBoundingClientRect();
+              const box = frame.getBoundingClientRect();
               if (box.width < 20 || box.height < 20) return;
-              editor.layout({ width: Math.floor(box.width), height: Math.floor(box.height) });
+              editor.layout({
+                width: Math.floor(box.width),
+                height: Math.floor(box.height),
+              });
             };
             layout();
+            requestAnimationFrame(layout);
             const observer = new ResizeObserver(layout);
-            observer.observe(parent);
+            observer.observe(frame);
             editor.onDidDispose(() => observer.disconnect());
           }}
           options={{
@@ -893,9 +1179,11 @@ function SourceEditor({
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
             fixedOverflowWidgets: true,
-            wordWrap: "on",
-            padding: { top: 16, bottom: 16 },
-            glyphMargin: true,
+            wordWrap: "off",
+            lineNumbers: "on",
+            lineNumbersMinChars: 3,
+            padding: { top: 12, bottom: 12 },
+            glyphMargin: false,
             renderValidationDecorations: "on",
             quickSuggestions: true,
             suggestOnTriggerCharacters: true,
@@ -909,13 +1197,12 @@ function SourceEditor({
             tabCompletion: "on",
             snippetSuggestions: "inline",
             bracketPairColorization: { enabled: true },
-            guides: { bracketPairs: true },
+            guides: { bracketPairs: true, indentation: true },
             smoothScrolling: true,
-            overviewRulerLanes: 2,
-            scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
+            overviewRulerLanes: 0,
+            scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
           }}
         />
-        </div>
       </div>
     </section>
   );
@@ -939,9 +1226,19 @@ function splitHtmlCss(source: string): { markup: string; stylesheet: string } {
     element.removeAttribute("style");
     rules.push(`.${className} { ${style} }`);
   });
+  const markup = formatHtmlSource(doc.body.innerHTML);
+  const used = new Set(
+    [...markup.matchAll(/class="([^"]*)"/g)].flatMap((match) => match[1]?.split(/\s+/) ?? []),
+  );
+  const stylesheet = rules.filter((rule) => {
+    const selector = /^\.style-\d+\s*\{/.exec(rule)?.[0];
+    if (!selector) return true;
+    const className = selector.slice(1, selector.indexOf(" "));
+    return used.has(className);
+  });
   return {
-    markup: formatHtmlSource(doc.body.innerHTML),
-    stylesheet: formatCss(rules.join("\n")),
+    markup,
+    stylesheet: formatCss(stylesheet.join("\n")),
   };
 }
 
@@ -952,19 +1249,81 @@ function joinHtmlCss(markup: string, stylesheet: string): string {
 }
 
 function formatCss(css: string): string {
-  return css
-    .replace(/\s*\{/g, " {\n  ")
-    .replace(/;\s*/g, ";\n  ")
-    .replace(/\s*\}/g, "\n}\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  const compact = css.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\s+/g, " ").trim();
+  let out = "";
+  let depth = 0;
+  let quote: '"' | "'" | null = null;
+  for (let index = 0; index < compact.length; index += 1) {
+    const char = compact[index]!;
+    if (quote) {
+      out += char;
+      if (char === "\\" && compact[index + 1]) {
+        out += compact[index + 1];
+        index += 1;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      out += char;
+      continue;
+    }
+    if (char === "{") {
+      out = `${out.trimEnd()} {\n${"  ".repeat(depth + 1)}`;
+      depth += 1;
+      continue;
+    }
+    if (char === "}") {
+      depth = Math.max(0, depth - 1);
+      out = `${out.trimEnd()}\n${"  ".repeat(depth)}}\n`;
+      if (depth > 0) out += "  ".repeat(depth);
+      continue;
+    }
+    if (char === ";") {
+      out = `${out.trimEnd()};\n${"  ".repeat(depth)}`;
+      continue;
+    }
+    out += char;
+  }
+  return `${out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+}
+
+/** Drop @media and @font-face so mobile-only rules are not applied in the editor. */
+function stripAtRules(css: string): string {
+  let out = "";
+  let index = 0;
+  while (index < css.length) {
+    if (css[index] !== "@") {
+      out += css[index];
+      index += 1;
+      continue;
+    }
+    const open = css.indexOf("{", index);
+    if (open === -1) break;
+    let depth = 0;
+    let cursor = open;
+    for (; cursor < css.length; cursor += 1) {
+      if (css[cursor] === "{") depth += 1;
+      else if (css[cursor] === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          cursor += 1;
+          break;
+        }
+      }
+    }
+    index = cursor;
+  }
+  return out;
 }
 
 function inlineStylesheet(doc: Document) {
   const rules: { selector: string; body: string }[] = [];
   doc.querySelectorAll("style").forEach((style) => {
-    for (const match of (style.textContent ?? "").matchAll(/([^{}@]+)\{([^{}]*)\}/g)) {
+    const css = stripAtRules(style.textContent ?? "");
+    for (const match of css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)) {
       const selector = match[1]?.trim();
       const body = match[2]?.trim();
       if (selector && body) rules.push({ selector, body });
@@ -1025,11 +1384,48 @@ function looksLikeButton(anchor: HTMLAnchorElement): boolean {
   return /display\s*:\s*inline-block/i.test(style) && /background(?:-color)?\s*:/i.test(style);
 }
 
+function iconImage(cell: Element): HTMLImageElement | null {
+  const images = [...cell.querySelectorAll("img")].filter(
+    (node): node is HTMLImageElement => node instanceof HTMLImageElement,
+  );
+  if (images.length !== 1) return null;
+  const image = images[0];
+  if (!image) return null;
+  if ((cell.textContent ?? "").replace(/\s+/g, "") !== "") return null;
+  const width = Number(image.getAttribute("width") ?? "");
+  const height = Number(image.getAttribute("height") ?? "");
+  const small = (width > 0 && width <= 96) || (height > 0 && height <= 96);
+  return small ? image : null;
+}
+
+/** A row of social logos must stay on one line. The editor otherwise stacks block images. */
+function flattenIconRows(doc: Document) {
+  for (const table of [...doc.body.querySelectorAll("table")]) {
+    const rows = [...table.querySelectorAll(":scope > tbody > tr, :scope > tr")];
+    if (rows.length !== 1) continue;
+    const cells = [...(rows[0]?.querySelectorAll(":scope > td, :scope > th") ?? [])];
+    if (cells.length < 2) continue;
+    const images = cells.map((cell) => iconImage(cell));
+    if (images.some((image) => !image)) continue;
+    const row = doc.createElement("div");
+    row.className = "envoy-icon-row";
+    for (const image of images) {
+      if (!image) continue;
+      const link = image.closest("a");
+      const href = link?.getAttribute("href");
+      if (href && href !== "#") image.setAttribute("href", href);
+      row.appendChild(image);
+    }
+    table.replaceWith(row);
+  }
+}
+
 function emailHtmlToEditorHtml(html: string): string {
   const source = html.trim();
   if (!source) return "<p></p>";
   const doc = new DOMParser().parseFromString(source, "text/html");
   inlineStylesheet(doc);
+  flattenIconRows(doc);
   doc.querySelectorAll("script, style, link, meta").forEach((node) => node.remove());
   const comments: Comment[] = [];
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_COMMENT);
@@ -1070,23 +1466,80 @@ function emailHtmlToEditorHtml(html: string): string {
   return content || "<p></p>";
 }
 
+const VOID_TAGS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+]);
+
+/** Preview padding and bidi marks. They are not readable text. */
+const INVISIBLE_CHARS =
+  /[\u00AD\u034F\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]/g;
+
+function visibleText(value: string): string {
+  return value.replace(INVISIBLE_CHARS, "").replace(/\s+/g, " ").trim();
+}
+
+function escapeHtmlText(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function serializeHtml(node: Node, depth: number): string {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = visibleText(node.textContent ?? "");
+    return text ? `${"  ".repeat(depth)}${escapeHtmlText(text)}\n` : "";
+  }
+  if (node.nodeType === Node.COMMENT_NODE) {
+    const text = visibleText(node.textContent ?? "");
+    if (!text || text === "$" || text === "/$" || text === "html" || text === "head" || text === "body") {
+      return "";
+    }
+    return `${"  ".repeat(depth)}<!-- ${text} -->\n`;
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return "";
+  const element = node as Element;
+  if (element.tagName === "BODY") {
+    return [...element.childNodes].map((child) => serializeHtml(child, depth)).join("");
+  }
+  if (element.getAttribute("data-skip-in-text") === "true") return "";
+  const tag = element.tagName.toLowerCase();
+  const attrs = [...element.attributes]
+    .filter((attr) => attr.name !== "data-skip-in-text")
+    .map((attr) => ` ${attr.name}="${escapeHtmlText(attr.value).replace(/"/g, "&quot;")}"`)
+    .join("");
+  const pad = "  ".repeat(depth);
+  if (element.classList.contains("envoy-icon-row")) {
+    const icons = [...element.children]
+      .map((child) => serializeHtml(child, 0).trim())
+      .filter(Boolean)
+      .join("");
+    return icons ? `${pad}<${tag}${attrs}>${icons}</${tag}>\n` : "";
+  }
+  if (VOID_TAGS.has(tag)) return `${pad}<${tag}${attrs}>\n`;
+  const children = [...element.childNodes];
+  const onlyText = children.every((child) => child.nodeType === Node.TEXT_NODE);
+  if (onlyText) {
+    const text = visibleText(children.map((child) => child.textContent ?? "").join(""));
+    return text ? `${pad}<${tag}${attrs}>${escapeHtmlText(text)}</${tag}>\n` : "";
+  }
+  const inner = children.map((child) => serializeHtml(child, depth + 1)).join("");
+  if (!inner.trim()) return "";
+  return `${pad}<${tag}${attrs}>\n${inner}${pad}</${tag}>\n`;
+}
+
 function formatHtmlSource(html: string): string {
-  const lines = html.replace(/>\s*</g, ">\n<").trim().split("\n");
-  let depth = 0;
-  return lines
-    .map((raw) => {
-      const line = raw.trim();
-      if (!line) return "";
-      const closes = /^<\/[^>]+>/.test(line);
-      const selfClosing = /\/>$/.test(line);
-      const paired = /^<[^>]+>[\s\S]*<\/[^>]+>$/.test(line);
-      const opens = /^<[^/!][^>]*>/.test(line) && !selfClosing && !paired;
-      if (closes) depth = Math.max(0, depth - 1);
-      const indented = `${"  ".repeat(depth)}${line}`;
-      if (opens) depth += 1;
-      return indented;
-    })
-    .join("\n");
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return serializeHtml(doc.body, 0).trim();
 }
 
 function MetaField({

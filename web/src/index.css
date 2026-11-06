@@ -1,13 +1,14 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
   --color-envoy: #0a4bd6;
   --color-envoy-deep: #0842bc;
 }
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
 }
 
 html,
@@ -114,58 +115,6 @@ body {
   animation: envoy-pulse-dot 1.4s ease-in-out infinite;
 }
 
-/* draw 1.2s → hold 5s → undraw 1.2s → wait 7s  = 14.4s */
-@keyframes envoy-mail-draw {
-  0% {
-    stroke-dashoffset: 1;
-    opacity: 1;
-  }
-  8.33% {
-    stroke-dashoffset: 0;
-    opacity: 1;
-  }
-  43.06% {
-    stroke-dashoffset: 0;
-    opacity: 1;
-  }
-  51.2% {
-    stroke-dashoffset: 1;
-    opacity: 1;
-  }
-  51.39% {
-    stroke-dashoffset: 1;
-    opacity: 0;
-  }
-  100% {
-    stroke-dashoffset: 1;
-    opacity: 0;
-  }
-}
-
-.envoy-mail-draw {
-  overflow: visible;
-}
-
-.envoy-mail-draw rect,
-.envoy-mail-draw path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: butt;
-  stroke-linejoin: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: envoy-mail-draw 14.4s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .envoy-mail-draw rect,
-  .envoy-mail-draw path {
-    animation: none;
-    stroke-dashoffset: 0;
-  }
-}
-
 .html-source .hljs-name {
   color: #0a4bd6;
 }
@@ -231,6 +180,7 @@ html:root,
 
 .envoy-template-editor .tiptap {
   min-height: 100%;
+  padding-left: 2.75rem;
   color: #0a0a0a;
   background: #fff;
 }
@@ -254,6 +204,25 @@ html:root,
   text-align: right;
 }
 
+.envoy-template-editor .tiptap .envoy-icon-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1.5rem;
+  width: max-content;
+  max-width: 100%;
+}
+
+.envoy-template-editor .tiptap .envoy-icon-row img {
+  display: inline-block;
+  width: auto;
+  max-width: none;
+  height: auto;
+  vertical-align: middle;
+}
+
 .envoy-template-editor .tiptap .node-columns {
   display: flex;
   align-items: stretch;
@@ -270,29 +239,19 @@ html:root,
   display: flex;
 }
 
-.envoy-button-grip {
+.envoy-drag-handle::after {
+  content: "";
   position: absolute;
-  z-index: 5;
-  display: inline-flex;
-  width: 1.75rem;
-  height: 1.75rem;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #e5e5e5;
-  border-radius: 0.125rem;
-  background: #fff;
-  color: #525252;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
-  cursor: grab;
+  top: -8px;
+  right: -24px;
+  bottom: -8px;
+  left: -8px;
 }
 
-.envoy-button-grip:hover {
-  border-color: rgb(10 75 214 / 40%);
-  color: #0a4bd6;
-}
-
-.envoy-button-grip:active {
-  cursor: grabbing;
+.envoy-template-editor [data-re-bubble-menu]:not(.envoy-text-menu):has([data-re-btn-bm-toolbar]),
+.envoy-template-editor [data-re-bubble-menu]:not(.envoy-text-menu):has([data-re-btn-bm-form]),
+.envoy-template-editor [data-re-bubble-menu]:not(.envoy-text-menu):has([data-re-node-selector]) {
+  display: none;
 }
 
 .envoy-template-editor .tiptap.ProseMirror[data-editor-theme-scope] .node-container {

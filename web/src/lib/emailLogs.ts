@@ -1,4 +1,4 @@
-import { readJsonStorage, storedObjects, writeJsonStorage } from "./safeStorage";
+import { authHeader } from "./auth";
 
 /** Aligns with the backend EmailStatus enum. */
 export const EMAIL_STATUSES = [
@@ -13,6 +13,10 @@ export const EMAIL_STATUSES = [
 
 export type EmailStatus = (typeof EMAIL_STATUSES)[number];
 
+export const HTTP_METHODS = ["GET", "POST"] as const;
+
+export type HttpMethod = (typeof HTTP_METHODS)[number];
+
 export type ConsoleEmailLog = {
   id: string;
   messageId: string;
@@ -21,9 +25,15 @@ export type ConsoleEmailLog = {
   cc: string[];
   subject: string;
   status: EmailStatus;
+  /** HTTP status of the send request (200, 202, 403, 504, …). */
+  httpStatus: number;
+  /** HTTP method of the API call that produced this log. */
+  method: HttpMethod;
   domain: string;
   apiKeyPrefix: string;
   errorMessage: string | null;
+  sesMessageId?: string | null;
+  bcc?: string[];
   /** HTML body sent to SES. */
   html: string;
   /** Plain-text alternative. */
@@ -32,69 +42,89 @@ export type ConsoleEmailLog = {
   sentAt: string | null;
 };
 
-const STORAGE_KEY = "envoy.console.email-logs.v2";
-
-function isLogArray(value: unknown): value is ConsoleEmailLog[] {
-  return Array.isArray(value);
-}
-
-const BODY_BY_ID: Record<string, string[]> = {
-  "log-8k2q": [
-    "Hello,",
-    "Invoice 2048 for March is ready. Amount due: $1,240.00.",
-    "Pay before the 15th to avoid a late fee.",
-  ],
-  "log-7n1p": [
-    "We received a request to reset your password.",
-    "This link expires in 30 minutes. If you did not ask for this, ignore the message.",
-  ],
-  "log-6m0o": [
-    "Welcome to Acme.",
-    "Your sending domain is pending DKIM verification.",
-  ],
-  "log-5c9a": [
-    "This week: 1,240 delivered, 4 bounces, 1 complaint.",
-    "Open the console to review suppressed addresses.",
-  ],
-  "log-4b8z": [
-    "This welcome was not sent.",
-    "The recipient is already on the suppression list.",
-  ],
-  "log-3a7y": [
-    "Your CSV export is queued.",
-    "We will email a download link as soon as SES accepts the message.",
-  ],
-  "log-2z6x": [
-    "The on-call alert could not be delivered.",
-    "Amazon SES did not respond before the request timed out.",
-  ],
+type LogPayload = {
+  id: string;
+  message_id: string;
+  ses_message_id: string | null;
+  from_address: string;
+  to_addresses: string[];
+  cc_addresses: string[];
+  bcc_addresses: string[];
+  subject: string;
+  status: EmailStatus;
+  error_message: string | null;
+  html: string | null;
+  text: string | null;
+  domain: string | null;
+  api_key_prefix: string | null;
+  created_at: string;
+  sent_at: string | null;
 };
 
-function withBody(log: ConsoleEmailLog): ConsoleEmailLog {
-  if (log.html && log.text) return log;
-  const paragraphs = BODY_BY_ID[log.id] ?? [
-    log.subject,
-    "This event has no stored body yet.",
-  ];
-  return { ...log, ...messageBody(paragraphs) };
+function apiUrl(): string {
+  return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 }
 
-export function readStoredLogs(): ConsoleEmailLog[] {
-  const parsed = readJsonStorage(localStorage, STORAGE_KEY, isLogArray);
-  if (!parsed) return seedLogs();
-  const records = storedObjects(parsed);
-  const next = records.map(withBody);
-  const missing = next.some((log, index) => log.html !== records[index]?.html);
-  if (missing) writeStoredLogs(next);
-  return next;
+async function readError(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    if (typeof body.detail === "string") return body.detail;
+  } catch {
+    /* réponse non JSON */
+  }
+  return "Log request failed.";
 }
 
-export function writeStoredLogs(logs: ConsoleEmailLog[]) {
-  writeJsonStorage(localStorage, STORAGE_KEY, logs);
+function httpStatusFor(status: EmailStatus): number {
+  if (status === "suppressed") return 422;
+  if (status === "failed") return 502;
+  return 202;
 }
 
-export function getStoredLog(id: string): ConsoleEmailLog | null {
-  return readStoredLogs().find((log) => log.id === id) ?? null;
+function fromPayload(row: LogPayload): ConsoleEmailLog {
+  const address = row.from_address.includes("<")
+    ? row.from_address.slice(row.from_address.lastIndexOf("<") + 1).replace(">", "")
+    : row.from_address;
+  const domain = row.domain ?? address.split("@")[1] ?? "—";
+  return {
+    id: row.id,
+    messageId: row.message_id,
+    from: row.from_address,
+    to: row.to_addresses ?? [],
+    cc: row.cc_addresses ?? [],
+    bcc: row.bcc_addresses ?? [],
+    subject: row.subject,
+    status: row.status,
+    httpStatus: httpStatusFor(row.status),
+    method: "POST",
+    domain,
+    apiKeyPrefix: row.api_key_prefix ?? "—",
+    errorMessage: row.error_message,
+    sesMessageId: row.ses_message_id,
+    html: row.html ?? "",
+    text: row.text ?? "",
+    createdAt: row.created_at,
+    sentAt: row.sent_at,
+  };
+}
+
+async function logRequest(path: string): Promise<Response> {
+  const baseUrl = apiUrl();
+  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
+  return fetch(`${baseUrl}/api/v1/logs${path}`, { headers: authHeader() });
+}
+
+export async function fetchLogs(): Promise<ConsoleEmailLog[]> {
+  const response = await logRequest("");
+  if (!response.ok) throw new Error(await readError(response));
+  return ((await response.json()) as LogPayload[]).map(fromPayload);
+}
+
+export async function fetchLog(id: string): Promise<ConsoleEmailLog | null> {
+  const response = await logRequest(`/${id}`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(await readError(response));
+  return fromPayload((await response.json()) as LogPayload);
 }
 
 export function filterLogs(
@@ -112,6 +142,8 @@ export function filterLogs(
       log.from,
       log.domain,
       log.apiKeyPrefix,
+      String(log.httpStatus),
+      log.method,
       log.text,
       ...log.to,
       ...log.cc,
@@ -122,133 +154,3 @@ export function filterLogs(
   });
 }
 
-function hoursAgo(hours: number): string {
-  return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-function messageBody(paragraphs: string[]): { html: string; text: string } {
-  const text = paragraphs.join("\n\n");
-  const html = `<!doctype html><html><body style="margin:0;padding:24px;font-family:Inter,sans-serif;color:#171717;font-size:14px;line-height:1.6;background:#fff">${paragraphs
-    .map((paragraph) => `<p style="margin:0 0 12px">${escapeHtml(paragraph)}</p>`)
-    .join("")}</body></html>`;
-  return { html, text };
-}
-
-function seedLogs(): ConsoleEmailLog[] {
-  const seed: ConsoleEmailLog[] = [
-    {
-      id: "log-8k2q",
-      messageId: "msg_8k2q",
-      from: "billing@mail.acme.io",
-      to: ["ops@acme.io"],
-      cc: ["finance@acme.io"],
-      subject: "Invoice 2048",
-      ...messageBody(BODY_BY_ID["log-8k2q"]!),
-      status: "delivered",
-      domain: "mail.acme.io",
-      apiKeyPrefix: "envoy_live_7kQe2mR9…",
-      errorMessage: null,
-      createdAt: hoursAgo(0.15),
-      sentAt: hoursAgo(0.14),
-    },
-    {
-      id: "log-7n1p",
-      messageId: "msg_7n1p",
-      from: "auth@notify.openrich.app",
-      to: ["hello@client.io"],
-      cc: [],
-      subject: "Password reset",
-      ...messageBody(BODY_BY_ID["log-7n1p"]!),
-      status: "sent",
-      domain: "notify.openrich.app",
-      apiKeyPrefix: "envoy_live_7kQe2mR9…",
-      errorMessage: null,
-      createdAt: hoursAgo(1.2),
-      sentAt: hoursAgo(1.19),
-    },
-    {
-      id: "log-6m0o",
-      messageId: "msg_6m0o",
-      from: "hello@mail.acme.io",
-      to: ["bad@trap.test"],
-      cc: [],
-      subject: "Welcome",
-      ...messageBody(BODY_BY_ID["log-6m0o"]!),
-      status: "bounced",
-      domain: "mail.acme.io",
-      apiKeyPrefix: "envoy_test_p5r9d0n3…",
-      errorMessage: "550 5.1.1 The email account does not exist.",
-      createdAt: hoursAgo(3),
-      sentAt: hoursAgo(2.9),
-    },
-    {
-      id: "log-5c9a",
-      messageId: "msg_5c9a",
-      from: "news@mail.acme.io",
-      to: ["spam@report.io"],
-      cc: [],
-      subject: "Weekly digest",
-      ...messageBody(BODY_BY_ID["log-5c9a"]!),
-      status: "complained",
-      domain: "mail.acme.io",
-      apiKeyPrefix: "envoy_live_7kQe2mR9…",
-      errorMessage: "Recipient marked this message as spam.",
-      createdAt: hoursAgo(8),
-      sentAt: hoursAgo(7.9),
-    },
-    {
-      id: "log-4b8z",
-      messageId: "msg_4b8z",
-      from: "hello@mail.acme.io",
-      to: ["blocked@suppression.list"],
-      cc: [],
-      subject: "Retry welcome",
-      ...messageBody(BODY_BY_ID["log-4b8z"]!),
-      status: "suppressed",
-      domain: "mail.acme.io",
-      apiKeyPrefix: "envoy_live_7kQe2mR9…",
-      errorMessage: "Recipient is on the suppression list (hard bounce).",
-      createdAt: hoursAgo(12),
-      sentAt: null,
-    },
-    {
-      id: "log-3a7y",
-      messageId: "msg_3a7y",
-      from: "jobs@notify.openrich.app",
-      to: ["queue@worker.dev"],
-      cc: [],
-      subject: "Export ready",
-      ...messageBody(BODY_BY_ID["log-3a7y"]!),
-      status: "queued",
-      domain: "notify.openrich.app",
-      apiKeyPrefix: "envoy_live_7kQe2mR9…",
-      errorMessage: null,
-      createdAt: hoursAgo(0.02),
-      sentAt: null,
-    },
-    {
-      id: "log-2z6x",
-      messageId: "msg_2z6x",
-      from: "alerts@mail.acme.io",
-      to: ["oncall@acme.io"],
-      cc: [],
-      subject: "SES timeout",
-      ...messageBody(BODY_BY_ID["log-2z6x"]!),
-      status: "failed",
-      domain: "mail.acme.io",
-      apiKeyPrefix: "envoy_live_7kQe2mR9…",
-      errorMessage: "SES SendEmail timed out after 8s.",
-      createdAt: hoursAgo(26),
-      sentAt: null,
-    },
-  ];
-  writeStoredLogs(seed);
-  return seed;
-}

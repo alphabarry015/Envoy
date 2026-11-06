@@ -12,7 +12,9 @@ from app import __version__
 from app import models as _models  # noqa: F401
 from app.api.v1.router import api_router
 from app.core.config import settings
-from app.core.database import engine, get_db
+from app.core.database import SessionLocal, engine, get_db
+from app.services.auth import ensure_bootstrap_admin
+from app.sql_files import read_sql
 
 logger = logging.getLogger("envoy")
 logging.basicConfig(
@@ -24,6 +26,9 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info("Starting %s (%s)", settings.app_name, settings.app_env)
+    if settings.bootstrap_admin_email and settings.bootstrap_admin_password:
+        async with SessionLocal() as session:
+            await ensure_bootstrap_admin(session)
     yield
     await engine.dispose()
     logger.info("Shutdown complete")
@@ -42,13 +47,20 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors_kwargs: dict[str, object] = {
+    "allow_origins": settings.cors_origins_list,
+    "allow_credentials": True,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+}
+if settings.app_env == "development":
+    _cors_kwargs["allow_origin_regex"] = (
+        r"https?://(localhost|127\.0\.0\.1|\[::1\]|192\.168\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$"
+    )
+elif settings.cors_origin_regex:
+    _cors_kwargs["allow_origin_regex"] = settings.cors_origin_regex
+
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 
@@ -70,5 +82,5 @@ async def healthcheck() -> dict[str, str]:
 
 @app.get("/ready", tags=["system"])
 async def readiness(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
-    await db.execute(text("SELECT 1"))
+    await db.execute(text(read_sql("ready_check.sql")))
     return {"status": "ready", "database": "ok"}

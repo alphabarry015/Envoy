@@ -11,11 +11,12 @@ import {
 } from "../../lib/consoleUi";
 import {
   type ConsoleTemplate,
+  createRemoteTemplate,
   createTemplate,
+  deleteRemoteTemplate,
   extractVariables,
-  readStoredTemplates,
+  fetchTemplates,
   slugAlias,
-  writeStoredTemplates,
 } from "../../lib/templates";
 
 const ALIAS_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -31,9 +32,10 @@ export default function TemplatesPanel() {
   const titleId = useId();
   const navigate = useNavigate();
   const nameRef = useRef<HTMLInputElement>(null);
-  const [templates, setTemplates] = useState<ConsoleTemplate[]>(() =>
-    readStoredTemplates(),
-  );
+  const [templates, setTemplates] = useState<ConsoleTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [alias, setAlias] = useState("");
@@ -73,7 +75,26 @@ export default function TemplatesPanel() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [pendingDelete]);
 
-  function addTemplate() {
+  useEffect(() => {
+    let cancelled = false;
+    fetchTemplates()
+      .then((rows) => {
+        if (!cancelled) setTemplates(rows);
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) {
+          setLoadError(caught instanceof Error ? caught.message : "Could not load templates.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function addTemplate() {
     const label = name.trim();
     const nextAlias = slugAlias(alias || label);
     setError(null);
@@ -89,20 +110,32 @@ export default function TemplatesPanel() {
       setError("This alias is already used.");
       return;
     }
-    const template = createTemplate(label, nextAlias);
-    const next = [template, ...templates];
-    setTemplates(next);
-    writeStoredTemplates(next);
-    closeModal();
-    navigate(`/console/templates/${template.id}`);
+    setBusy(true);
+    try {
+      const template = await createRemoteTemplate(createTemplate(label, nextAlias));
+      setTemplates((current) => [template, ...current]);
+      closeModal();
+      navigate(`/console/templates/${template.id}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create this template.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function deleteTemplate() {
-    if (!pendingDelete) return;
-    const next = templates.filter((template) => template.id !== pendingDelete.id);
-    setTemplates(next);
-    writeStoredTemplates(next);
-    setPendingDelete(null);
+  async function deleteTemplate() {
+    if (!pendingDelete || busy) return;
+    setBusy(true);
+    try {
+      await deleteRemoteTemplate(pendingDelete.id);
+      setTemplates((current) => current.filter((template) => template.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch (caught) {
+      setLoadError(caught instanceof Error ? caught.message : "Could not delete this template.");
+      setPendingDelete(null);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -136,7 +169,11 @@ export default function TemplatesPanel() {
             Templates · {templates.length}
           </p>
         </div>
-        {templates.length === 0 ? (
+        {loadError ? (
+          <p className="px-5 py-8 text-sm text-red-700">{loadError}</p>
+        ) : loading ? (
+          <p className="px-5 py-8 text-sm text-neutral-500">Loading templates…</p>
+        ) : templates.length === 0 ? (
           <div className="flex flex-col items-center px-5 py-12 text-center">
             <LayoutTemplate className="size-8 text-neutral-300" aria-hidden="true" />
             <p className="mt-3 text-sm text-neutral-500">

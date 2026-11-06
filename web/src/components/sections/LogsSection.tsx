@@ -1,5 +1,5 @@
 import { Shield } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import PixelAccents from "../ui/PixelAccents";
 import SectionHeader from "../ui/SectionHeader";
@@ -11,7 +11,6 @@ type LogRow = {
   at: string;
   recipient: string;
   event: EventStatus;
-  latency: string;
 };
 
 const STATUS_STYLES: Record<EventStatus, string> = {
@@ -21,68 +20,36 @@ const STATUS_STYLES: Record<EventStatus, string> = {
   Complaint: "bg-violet-400/15 text-violet-200",
 };
 
-const SEED: LogRow[] = [
-  { id: "msg_8f21", at: "03:41:02.018", recipient: "ops@northwind.io", event: "Delivered", latency: "47ms" },
-  { id: "msg_8f20", at: "03:41:01.902", recipient: "billing@helix.dev", event: "Delivered", latency: "52ms" },
-  { id: "msg_8f19", at: "03:40:58.441", recipient: "gone@oldmail.tld", event: "Bounced", latency: "61ms" },
-  { id: "msg_8f18", at: "03:40:54.110", recipient: "abuse@trap.example", event: "Suppressed", latency: "12ms" },
-];
-
-const POOL: Array<Pick<LogRow, "recipient" | "event" | "latency">> = [
-  { recipient: "hello@flowen.agency", event: "Delivered", latency: "44ms" },
-  { recipient: "support@openrich.app", event: "Delivered", latency: "39ms" },
-  { recipient: "noreply-bounce@isp.net", event: "Bounced", latency: "73ms" },
-  { recipient: "spam-report@mailbox.com", event: "Complaint", latency: "58ms" },
-  { recipient: "blocked@suppression.list", event: "Suppressed", latency: "9ms" },
+const ROWS: LogRow[] = [
+  { id: "msg_8f21", at: "03:41:02", recipient: "ops@northwind.example", event: "Delivered" },
+  { id: "msg_8f20", at: "03:41:01", recipient: "billing@helix.example", event: "Delivered" },
+  { id: "msg_8f19", at: "03:40:58", recipient: "gone@oldmail.example", event: "Bounced" },
+  { id: "msg_8f18", at: "03:40:54", recipient: "abuse@trap.example", event: "Suppressed" },
+  { id: "msg_8f17", at: "03:40:49", recipient: "report@mailbox.example", event: "Complaint" },
 ];
 
 const SUPPRESSED = [
-  { email: "gone@oldmail.tld", reason: "Hard bounce" },
+  { email: "gone@oldmail.example", reason: "Hard bounce" },
   { email: "abuse@trap.example", reason: "Complaint" },
-  { email: "blocked@suppression.list", reason: "Hard bounce" },
+  { email: "report@mailbox.example", reason: "Complaint" },
 ];
 
-function stamp(): string {
-  const now = new Date();
-  return [
-    String(now.getHours()).padStart(2, "0"),
-    String(now.getMinutes()).padStart(2, "0"),
-    String(now.getSeconds()).padStart(2, "0"),
-  ].join(":") + `.${String(now.getMilliseconds()).padStart(3, "0")}`;
-}
-
 export default function LogsSection() {
-  const [rows, setRows] = useState<LogRow[]>(SEED);
   const [showSuppression, setShowSuppression] = useState(true);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      const next = POOL[Math.floor(Math.random() * POOL.length)];
-      setRows((current) => [
-        {
-          id: `msg_${Math.random().toString(36).slice(2, 7)}`,
-          at: stamp(),
-          ...next,
-        },
-        ...current.slice(0, 6),
-      ]);
-    }, 2800);
-    return () => window.clearInterval(timer);
-  }, []);
-
   return (
-    <section id="logs" className="relative scroll-mt-8 overflow-hidden bg-[#0A4BD6] py-20 text-white md:py-28">
+    <section id="logs" className="relative scroll-mt-8 overflow-hidden bg-[#0A4BD6] py-14 text-white md:py-28">
       <PixelAccents variant={2} />
-      <div className="relative z-10 mx-auto w-full max-w-[92rem] px-5 md:px-8">
+      <div className="relative z-10 mx-auto w-full max-w-[92rem] px-4 sm:px-5 md:px-8">
         <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
           <div className="lg:col-span-5">
             <SectionHeader
               tone="dark"
-              kicker="AUDIT TRAIL & REPUTATION"
-              title="Sub-80ms API Responses with Instant Event Tracking."
-              description="The send endpoint returns a messageId immediately. SES delivery, hard bounces and complaints stream in through SNS and feed the global suppression list."
+              kicker="EVENTS"
+              title="Delivery events and suppression list"
+              description="The send endpoint returns a message ID and queues the message. Amazon SES reports deliveries, bounces and complaints through SNS. Envoy records each event in the logs, and adds hard-bounced or complaining addresses to the suppression list so they are skipped on later sends."
             />
-            <label className="mt-8 inline-flex cursor-pointer items-center gap-3 text-sm text-white/70">
+            <label className="mt-8 inline-flex cursor-pointer items-center gap-3 text-sm text-white/80">
               <input
                 type="checkbox"
                 checked={showSuppression}
@@ -94,30 +61,24 @@ export default function LogsSection() {
           </div>
 
           <div className="lg:col-span-7">
-            <div className="rounded-sm border border-white/10 bg-white/5 p-5 backdrop-blur-sm md:p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <p className="font-mono text-[11px] tracking-widest text-white/40 uppercase">
-                  Live event console
-                </p>
-                <span className="inline-flex items-center gap-2 font-mono text-[11px] text-emerald-200">
-                  <span className="envoy-live-dot size-1.5 rounded-full bg-emerald-400" />
-                  STREAMING
-                </span>
-              </div>
+            <div className="rounded-sm border border-white/10 bg-[#0839B0]/70 p-5 md:p-6">
+              <p className="mb-4 font-mono text-[11px] tracking-widest text-white/80 uppercase">
+                Example event log
+              </p>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[560px] text-left text-sm">
                   <thead>
-                    <tr className="border-b border-white/10 font-mono text-[11px] tracking-widest text-white/40 uppercase">
+                    <tr className="border-b border-white/10 font-mono text-[11px] tracking-widest text-white/80 uppercase">
                       <th className="py-2 font-medium">Time</th>
                       <th className="py-2 font-medium">Recipient</th>
                       <th className="py-2 font-medium">Event</th>
-                      <th className="py-2 font-medium">API</th>
+                      <th className="py-2 font-medium">Message</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row) => (
+                    {ROWS.map((row) => (
                       <tr key={row.id} className="border-b border-white/10">
-                        <td className="py-3 font-mono text-xs text-white/50">{row.at}</td>
+                        <td className="py-3 font-mono text-xs text-white/80">{row.at}</td>
                         <td className="py-3 font-mono text-xs text-white/80">{row.recipient}</td>
                         <td className="py-3">
                           <span
@@ -126,7 +87,7 @@ export default function LogsSection() {
                             {row.event}
                           </span>
                         </td>
-                        <td className="py-3 font-mono text-xs text-white/50">{row.latency}</td>
+                        <td className="py-3 font-mono text-xs text-white/80">{row.id}</td>
                       </tr>
                     ))}
                   </tbody>

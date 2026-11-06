@@ -6,10 +6,9 @@ import { useNavigate } from "react-router-dom";
 import {
   type ConsoleDomain,
   DOMAIN_PATTERN,
-  createDomain,
+  connectRemoteDomain,
+  fetchDomains,
   normalizeDomain,
-  readStoredDomains,
-  writeStoredDomains,
 } from "../../lib/domains";
 import {
   BTN_GHOST,
@@ -17,17 +16,38 @@ import {
   FIELD_COMPACT,
   PORTAL_SURFACE,
 } from "../../lib/consoleUi";
+import { PageLoading } from "../ui/ScanLoading";
 
 export default function DomainsPanel() {
   const titleId = useId();
   const navigate = useNavigate();
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const [domains, setDomains] = useState<ConsoleDomain[]>(() =>
-    readStoredDomains(),
-  );
+  const [domains, setDomains] = useState<ConsoleDomain[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchDomains()
+      .then((rows) => {
+        if (!cancelled) setDomains(rows);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setLoadError(reason instanceof Error ? reason.message : "Could not load domains.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function openModal() {
     setInput("");
@@ -56,7 +76,7 @@ export default function DomainsPanel() {
     };
   }, [modalOpen]);
 
-  function addDomain() {
+  async function addDomain() {
     const name = normalizeDomain(input);
     setError(null);
 
@@ -69,20 +89,30 @@ export default function DomainsPanel() {
       return;
     }
 
-    const domain = createDomain(name);
-    const next = [domain, ...domains];
-    setDomains(next);
-    writeStoredDomains(next);
-    closeModal();
-    navigate(`/console/domains/${domain.id}`);
+    setSaving(true);
+    try {
+      const domain = await connectRemoteDomain(name);
+      setDomains((current) => [domain, ...current.filter((item) => item.id !== domain.id)]);
+      closeModal();
+      navigate(`/console/domains/${domain.id}`);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Could not connect the domain.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return <PageLoading>Loading domains…</PageLoading>;
   }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-neutral-500">
-          DNS provider is detected automatically from the domain nameservers.
+          A domain already verified in Amazon SES is linked as-is. Removing it here leaves the AWS identity in place.
         </p>
+        {loadError ? <p className="w-full text-sm text-red-600">{loadError}</p> : null}
         <button type="button" onClick={openModal} className={BTN_PRIMARY}>
           <Globe className="size-3.5" aria-hidden="true" />
           Add domain
@@ -186,7 +216,7 @@ export default function DomainsPanel() {
                       value={input}
                       onChange={(event) => setInput(event.target.value)}
                       onKeyDown={(event) => {
-                        if (event.key === "Enter") addDomain();
+                        if (event.key === "Enter") void addDomain();
                       }}
                       placeholder="mail.example.com"
                       autoComplete="off"
@@ -217,10 +247,11 @@ export default function DomainsPanel() {
                     <button
                       type="button"
                       className={BTN_PRIMARY}
-                      onClick={addDomain}
+                      onClick={() => void addDomain()}
+                      disabled={saving}
                     >
                       <Globe className="size-3.5" aria-hidden="true" />
-                      Add domain
+                      {saving ? "Connecting…" : "Add domain"}
                     </button>
                   </div>
                 </div>

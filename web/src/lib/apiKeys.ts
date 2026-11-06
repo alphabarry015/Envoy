@@ -1,4 +1,4 @@
-import { readJsonStorage, storedObjects, writeJsonStorage } from "./safeStorage";
+import { authHeader } from "./auth";
 
 export type ApiKeyStatus = "active" | "revoked";
 export type ApiKeyMode = "live" | "sandbox";
@@ -56,8 +56,6 @@ export type CreateApiKeyInput = {
   monthlyQuota: number | null;
 };
 
-const STORAGE_KEY = "envoy.console.api-keys.v2";
-
 const ALPHABET =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -88,20 +86,6 @@ function toPrefix(secret: string): string {
   return `${secret.slice(0, 18)}…`;
 }
 
-function normalizeKey(key: ConsoleApiKey): ConsoleApiKey {
-  return {
-    ...key,
-    mode: key.mode === "sandbox" ? "sandbox" : "live",
-    scopes:
-      Array.isArray(key.scopes) && key.scopes.length > 0
-        ? key.scopes
-        : [...DEFAULT_SCOPES],
-    dailyQuota: key.dailyQuota ?? 5_000,
-    monthlyQuota: key.monthlyQuota ?? 100_000,
-    secret: undefined,
-  };
-}
-
 export function createApiKey(input: CreateApiKeyInput): ConsoleApiKey {
   const secret = generateApiKeySecret(input.mode);
   const now = new Date().toISOString();
@@ -123,82 +107,101 @@ export function createApiKey(input: CreateApiKeyInput): ConsoleApiKey {
   };
 }
 
-/** Persistable shape — secret never written to storage. */
-function toStored(key: ConsoleApiKey): ConsoleApiKey {
-  const { secret: _secret, ...rest } = key;
-  return rest;
+type ApiKeyPayload = {
+  id: string;
+  name: string;
+  key_prefix: string;
+  mode: ApiKeyMode;
+  scopes: ApiKeyScope[];
+  daily_quota: number | null;
+  monthly_quota: number | null;
+  is_active: boolean;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  key?: string;
+};
+
+function apiUrl(): string {
+  return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 }
 
-function isApiKeyArray(value: unknown): value is ConsoleApiKey[] {
-  return Array.isArray(value);
+async function readError(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    if (typeof body.detail === "string") return body.detail;
+  } catch {
+    /* réponse non JSON */
+  }
+  return "API key request failed.";
 }
 
-export function readStoredApiKeys(): ConsoleApiKey[] {
-  const parsed = readJsonStorage(localStorage, STORAGE_KEY, isApiKeyArray);
-  if (!parsed) return seedApiKeys();
-  return storedObjects(parsed).map(normalizeKey);
+function fromPayload(row: ApiKeyPayload): ConsoleApiKey {
+  return {
+    id: row.id,
+    name: row.name,
+    secret: row.key,
+    prefix: row.key_prefix,
+    mode: row.mode === "sandbox" ? "sandbox" : "live",
+    scopes: row.scopes?.length ? row.scopes : [...DEFAULT_SCOPES],
+    dailyQuota: row.daily_quota,
+    monthlyQuota: row.monthly_quota,
+    status: row.is_active ? "active" : "revoked",
+    createdAt: row.created_at,
+    lastUsedAt: row.last_used_at,
+    revokedAt: row.revoked_at,
+  };
 }
 
-export function writeStoredApiKeys(keys: ConsoleApiKey[]) {
-  writeJsonStorage(
-    localStorage,
-    STORAGE_KEY,
-    keys.map((key) => toStored(key)),
-  );
+export async function fetchApiKeys(): Promise<ConsoleApiKey[]> {
+  const baseUrl = apiUrl();
+  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
+  const response = await fetch(`${baseUrl}/api/v1/api-keys`, { headers: authHeader() });
+  if (!response.ok) throw new Error(await readError(response));
+  const body = (await response.json()) as ApiKeyPayload[];
+  return body.map(fromPayload);
 }
 
-export function revokeStoredApiKey(id: string): ConsoleApiKey[] {
-  const now = new Date().toISOString();
-  const next = readStoredApiKeys().map((key) =>
-    key.id === id && key.status === "active"
-      ? { ...key, status: "revoked" as const, revokedAt: now, secret: undefined }
-      : key,
-  );
-  writeStoredApiKeys(next);
-  return next;
+export async function createRemoteApiKey(input: CreateApiKeyInput): Promise<ConsoleApiKey> {
+  const baseUrl = apiUrl();
+  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
+  const response = await fetch(`${baseUrl}/api/v1/api-keys`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({
+      name: input.name.trim(),
+      mode: input.mode,
+      scopes: input.scopes.length > 0 ? input.scopes : [...DEFAULT_SCOPES],
+      daily_quota: input.dailyQuota,
+      monthly_quota: input.monthlyQuota,
+    }),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return fromPayload((await response.json()) as ApiKeyPayload);
 }
 
-export function removeStoredApiKey(id: string): ConsoleApiKey[] {
-  const next = readStoredApiKeys().filter((key) => key.id !== id);
-  writeStoredApiKeys(next);
-  return next;
+export async function revokeRemoteApiKey(id: string): Promise<ConsoleApiKey> {
+  const baseUrl = apiUrl();
+  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
+  const response = await fetch(`${baseUrl}/api/v1/api-keys/${id}/revoke`, {
+    method: "POST",
+    headers: authHeader(),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return fromPayload((await response.json()) as ApiKeyPayload);
+}
+
+export async function deleteRemoteApiKey(id: string): Promise<void> {
+  const baseUrl = apiUrl();
+  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
+  const response = await fetch(`${baseUrl}/api/v1/api-keys/${id}`, {
+    method: "DELETE",
+    headers: authHeader(),
+  });
+  if (!response.ok) throw new Error(await readError(response));
 }
 
 export function formatQuota(value: number | null): string {
   if (value === null) return "∞";
   return value.toLocaleString("en-US");
-}
-
-function seedApiKeys(): ConsoleApiKey[] {
-  const now = Date.now();
-  const seed: ConsoleApiKey[] = [
-    {
-      id: crypto.randomUUID(),
-      name: "Production",
-      prefix: "envoy_live_7kQe2mR9…",
-      mode: "live",
-      scopes: ["send", "domains", "logs"],
-      dailyQuota: 5_000,
-      monthlyQuota: 100_000,
-      status: "active",
-      createdAt: new Date(now - 1000 * 60 * 60 * 24 * 12).toISOString(),
-      lastUsedAt: new Date(now - 1000 * 60 * 8).toISOString(),
-      revokedAt: null,
-    },
-    {
-      id: crypto.randomUUID(),
-      name: "CI / staging",
-      prefix: "envoy_test_p5r9d0n3…",
-      mode: "sandbox",
-      scopes: ["send"],
-      dailyQuota: 1_000,
-      monthlyQuota: 10_000,
-      status: "active",
-      createdAt: new Date(now - 1000 * 60 * 60 * 24 * 3).toISOString(),
-      lastUsedAt: new Date(now - 1000 * 60 * 60 * 5).toISOString(),
-      revokedAt: null,
-    },
-  ];
-  writeStoredApiKeys(seed);
-  return seed;
 }

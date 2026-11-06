@@ -12,9 +12,9 @@ export default function SectionHeader({
   tone = "light",
 }: SectionHeaderProps) {
   const kickerClass =
-    tone === "dark" ? "text-white/50" : "text-[#0A4BD6]/60";
+    tone === "dark" ? "text-white/80" : "text-[#0A4BD6]/60";
   const titleClass = tone === "dark" ? "text-white" : "text-neutral-950";
-  const copyClass = tone === "dark" ? "text-white/70" : "text-neutral-600";
+  const copyClass = tone === "dark" ? "text-white/80" : "text-neutral-600";
 
   return (
     <div className="max-w-3xl">

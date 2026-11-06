@@ -1,15 +1,17 @@
 import { ChevronRight, Mail, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
   type ConsoleEmailLog,
   type EmailStatus,
+  type HttpMethod,
   EMAIL_STATUSES,
+  fetchLogs,
   filterLogs,
-  readStoredLogs,
 } from "../../lib/emailLogs";
 import { FIELD } from "../../lib/consoleUi";
+import { PageLoading } from "../ui/ScanLoading";
 
 const FILTERS: Array<EmailStatus | "all"> = ["all", ...EMAIL_STATUSES];
 
@@ -22,11 +24,34 @@ function formatWhen(iso: string) {
 
 export default function LogsPanel() {
   const navigate = useNavigate();
-  const logs = useMemo(() => readStoredLogs(), []);
+  const [logs, setLogs] = useState<ConsoleEmailLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<EmailStatus | "all">("all");
 
-  const visible = filterLogs(logs, query, status);
+  useEffect(() => {
+    let cancelled = false;
+    fetchLogs()
+      .then((rows) => {
+        if (!cancelled) setLogs(rows);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : "Could not load logs.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const visible = useMemo(() => filterLogs(logs, query, status), [logs, query, status]);
+
+  if (loading) {
+    return <PageLoading>Loading logs…</PageLoading>;
+  }
 
   return (
     <div className="space-y-6">
@@ -44,6 +69,7 @@ export default function LogsPanel() {
             className={`${FIELD} w-full pl-11`}
           />
         </label>
+        {loadError ? <p className="text-sm text-red-600">{loadError}</p> : null}
         <div className="flex flex-wrap gap-2" role="group" aria-label="Status">
           {FILTERS.map((item) => {
             const active = status === item;
@@ -76,19 +102,21 @@ export default function LogsPanel() {
           <div className="flex flex-col items-center px-5 py-12 text-center">
             <Mail className="size-8 text-neutral-300" aria-hidden="true" />
             <p className="mt-3 text-sm text-neutral-500">
-              No messages match this filter.
+              {logs.length === 0 ? "No messages yet." : "No messages match this filter."}
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] table-fixed border-collapse text-left text-sm">
+            <table className="w-full min-w-[960px] table-fixed border-collapse text-left text-sm">
               <colgroup>
-                <col className="w-[14%]" />
-                <col className="w-[24%]" />
-                <col className="w-[28%]" />
-                <col className="w-[16%]" />
-                <col className="w-[14%]" />
-                <col className="w-[4%]" />
+                <col className="w-[12%]" />
+                <col className="w-[20%]" />
+                <col className="w-[22%]" />
+                <col className="w-[13%]" />
+                <col className="w-[9%]" />
+                <col className="w-[9%]" />
+                <col className="w-[12%]" />
+                <col className="w-[3%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-100/80 font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
@@ -96,6 +124,8 @@ export default function LogsPanel() {
                   <th className="px-5 py-2.5 font-medium">To</th>
                   <th className="px-5 py-2.5 font-medium">Subject</th>
                   <th className="px-5 py-2.5 font-medium">Status</th>
+                  <th className="px-5 py-2.5 font-medium">Method</th>
+                  <th className="px-5 py-2.5 font-medium">HTTP</th>
                   <th className="px-5 py-2.5 font-medium">Created</th>
                   <th className="px-5 py-2.5 font-medium"> </th>
                 </tr>
@@ -119,6 +149,12 @@ export default function LogsPanel() {
                     <td className="px-5 py-4">
                       <StatusBadge status={log.status} />
                     </td>
+                    <td className="px-5 py-4">
+                      <MethodBadge method={log.method} />
+                    </td>
+                    <td className="px-5 py-4">
+                      <HttpStatus code={log.httpStatus} />
+                    </td>
                     <td className="px-5 py-4 font-mono text-xs text-neutral-500">
                       {formatWhen(log.createdAt)}
                     </td>
@@ -136,6 +172,34 @@ export default function LogsPanel() {
         )}
       </div>
     </div>
+  );
+}
+
+export function MethodBadge({ method }: { method: HttpMethod }) {
+  const tone =
+    method === "POST"
+      ? "bg-[#0A4BD6]/10 text-[#0A4BD6]"
+      : "bg-neutral-200/70 text-neutral-600";
+
+  return (
+    <span className={`inline-flex rounded-sm px-2 py-0.5 font-mono text-[11px] ${tone}`}>
+      {method}
+    </span>
+  );
+}
+
+export function HttpStatus({ code }: { code: number }) {
+  const tone =
+    code >= 500
+      ? "bg-red-50 text-red-600"
+      : code >= 400
+        ? "bg-amber-50 text-amber-700"
+        : "bg-emerald-50 text-emerald-700";
+
+  return (
+    <span className={`inline-flex rounded-sm px-2 py-0.5 font-mono text-[11px] ${tone}`}>
+      {code}
+    </span>
   );
 }
 

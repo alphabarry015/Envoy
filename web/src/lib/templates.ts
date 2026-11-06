@@ -1,4 +1,4 @@
-import { readJsonStorage, storedObjects, writeJsonStorage } from "./safeStorage";
+import { authHeader } from "./auth";
 
 export type TemplateStatus = "draft" | "published";
 
@@ -28,12 +28,11 @@ export type ConsoleTemplate = {
   updatedAt: string;
 };
 
-const STORAGE_KEY = "envoy.console.templates.v1";
 const VARIABLE = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
 
 const EMPTY_META = {
-  fromName: "Acme",
-  fromEmail: "acme@example.com",
+  fromName: "",
+  fromEmail: "",
   replyTo: "",
   previewText: "",
   status: "draft" as const,
@@ -95,8 +94,118 @@ function normalizeVariables(value: unknown): TemplateVariable[] {
   });
 }
 
-function isTemplateArray(value: unknown): value is ConsoleTemplate[] {
-  return Array.isArray(value);
+type TemplatePayload = {
+  id: string;
+  name: string;
+  alias: string;
+  subject: string;
+  html: string;
+  text: string;
+  from_name: string;
+  from_email: string;
+  reply_to: string;
+  preview_text: string;
+  status: TemplateStatus;
+  variables: TemplateVariable[];
+  document: object | null;
+  updated_at: string;
+};
+
+function apiUrl(): string {
+  return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+}
+
+async function readError(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    if (typeof body.detail === "string") return body.detail;
+  } catch {
+    /* réponse non JSON */
+  }
+  return fallback;
+}
+
+function fromPayload(row: TemplatePayload): ConsoleTemplate {
+  return normalize({
+    id: row.id,
+    name: row.name,
+    alias: row.alias,
+    subject: row.subject,
+    html: row.html,
+    text: row.text,
+    fromName: row.from_name,
+    fromEmail: row.from_email,
+    replyTo: row.reply_to,
+    previewText: row.preview_text,
+    status: row.status,
+    variables: row.variables,
+    document: row.document,
+    updatedAt: row.updated_at,
+  });
+}
+
+function toPayload(template: ConsoleTemplate) {
+  return {
+    name: template.name.trim() || "Untitled Template",
+    alias: template.alias,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+    from_name: template.fromName,
+    from_email: template.fromEmail,
+    reply_to: template.replyTo,
+    preview_text: template.previewText,
+    status: template.status,
+    variables: template.variables,
+    document: template.document,
+  };
+}
+
+async function templateRequest(path: string, init: RequestInit): Promise<Response> {
+  const baseUrl = apiUrl();
+  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
+  const headers = new Headers(init.headers);
+  new Headers(authHeader()).forEach((value, key) => headers.set(key, value));
+  if (init.body) headers.set("Content-Type", "application/json");
+  return fetch(`${baseUrl}/api/v1/templates${path}`, { ...init, headers });
+}
+
+export async function fetchTemplates(): Promise<ConsoleTemplate[]> {
+  const response = await templateRequest("", { method: "GET" });
+  if (!response.ok) throw new Error(await readError(response, "Could not load templates."));
+  return ((await response.json()) as TemplatePayload[]).map(fromPayload);
+}
+
+export async function fetchTemplate(id: string): Promise<ConsoleTemplate | null> {
+  const response = await templateRequest(`/${id}`, { method: "GET" });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(await readError(response, "Could not load this template."));
+  return fromPayload((await response.json()) as TemplatePayload);
+}
+
+export async function createRemoteTemplate(template: ConsoleTemplate): Promise<ConsoleTemplate> {
+  const response = await templateRequest("", {
+    method: "POST",
+    body: JSON.stringify(toPayload(template)),
+  });
+  if (!response.ok) throw new Error(await readError(response, "Could not create this template."));
+  return fromPayload((await response.json()) as TemplatePayload);
+}
+
+export async function updateRemoteTemplate(template: ConsoleTemplate): Promise<ConsoleTemplate> {
+  const response = await templateRequest(`/${template.id}`, {
+    method: "PUT",
+    body: JSON.stringify(toPayload(template)),
+  });
+  if (!response.ok) throw new Error(await readError(response, "Could not save this template."));
+  return fromPayload((await response.json()) as TemplatePayload);
+}
+
+export async function deleteRemoteTemplate(id: string): Promise<void> {
+  const response = await templateRequest(`/${id}`, { method: "DELETE" });
+  if (!response.ok && response.status !== 204) {
+    throw new Error(await readError(response, "Could not delete this template."));
+  }
 }
 
 function normalize(template: ConsoleTemplate): ConsoleTemplate {
@@ -114,72 +223,4 @@ function normalize(template: ConsoleTemplate): ConsoleTemplate {
         ? template.document
         : null,
   };
-}
-
-export function readStoredTemplates(): ConsoleTemplate[] {
-  const parsed = readJsonStorage(localStorage, STORAGE_KEY, isTemplateArray);
-  if (!parsed) return seedTemplates();
-  return storedObjects(parsed).map(normalize);
-}
-
-export function writeStoredTemplates(templates: ConsoleTemplate[]): boolean {
-  return writeJsonStorage(localStorage, STORAGE_KEY, templates);
-}
-
-export function getStoredTemplate(id: string): ConsoleTemplate | null {
-  return readStoredTemplates().find((template) => template.id === id) ?? null;
-}
-
-function hoursAgo(hours: number): string {
-  return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-}
-
-function seedTemplates(): ConsoleTemplate[] {
-  return [
-    {
-      id: "tpl-invoice",
-      name: "Invoice",
-      alias: "invoice",
-      subject: "Invoice {{invoice_number}}",
-      html: `<p>Hello {{name}},</p><p>Invoice {{invoice_number}} is ready. Amount due: {{amount}}.</p><p>Pay before {{due_date}}.</p>`,
-      text: "Hello {{name}},\n\nInvoice {{invoice_number}} is ready. Amount due: {{amount}}.\n\nPay before {{due_date}}.",
-      updatedAt: hoursAgo(6),
-      ...EMPTY_META,
-      variables: [
-        { name: "name", type: "string", fallback: "" },
-        { name: "invoice_number", type: "string", fallback: "" },
-        { name: "amount", type: "string", fallback: "" },
-        { name: "due_date", type: "string", fallback: "" },
-      ],
-    },
-    {
-      id: "tpl-reset",
-      name: "Password reset",
-      alias: "password-reset",
-      subject: "Reset your password",
-      html: `<p>Hello {{name}},</p><p>Reset your password: {{reset_url}}</p><p>This link expires in {{expires_in}}.</p>`,
-      text: "Hello {{name}},\n\nReset your password: {{reset_url}}\n\nThis link expires in {{expires_in}}.",
-      updatedAt: hoursAgo(30),
-      ...EMPTY_META,
-      variables: [
-        { name: "name", type: "string", fallback: "" },
-        { name: "reset_url", type: "string", fallback: "" },
-        { name: "expires_in", type: "string", fallback: "" },
-      ],
-    },
-    {
-      id: "tpl-welcome",
-      name: "Welcome",
-      alias: "welcome",
-      subject: "Welcome to {{workspace}}",
-      html: `<p>Hello {{name}},</p><p>Your workspace {{workspace}} is ready.</p>`,
-      text: "Hello {{name}},\n\nYour workspace {{workspace}} is ready.",
-      updatedAt: hoursAgo(80),
-      ...EMPTY_META,
-      variables: [
-        { name: "name", type: "string", fallback: "" },
-        { name: "workspace", type: "string", fallback: "" },
-      ],
-    },
-  ];
 }

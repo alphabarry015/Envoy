@@ -3,9 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_send_api_key
+from app.core.config import settings
 from app.core.database import get_db
+from app.models.email_log import EmailStatus
+from app.models.user import ApiKey
 from app.schemas.email import EmailSendRequest, EmailSendResponse
-from app.services.aws_ses import SESService, get_ses_service
+from app.services.send import SendError, accept_send, perform_ses_send
 
 router = APIRouter()
 
@@ -20,14 +24,22 @@ async def send_email(
     payload: EmailSendRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    ses: SESService = Depends(get_ses_service),
+    api_key: ApiKey = Depends(get_send_api_key),
 ) -> EmailSendResponse:
-    """Valide le payload, contrôle la suppression list / quotas, puis enqueue l'envoi SES.
+    """Contrôle la clé, le domaine, la suppression et les quotas, puis envoie via SES.
 
-    Le `messageId` est renvoyé immédiatement (< 80 ms) ; l'expédition AWS
-    s'exécute via `BackgroundTasks`.
+    Une clé sandbox est acceptée sans appel AWS. Une clé live répond tout de suite
+    avec le statut `queued` ; l'appel SES suit dans la même requête, après la réponse.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Transactional send will be implemented in the next sprint",
-    )
+    try:
+        log = await accept_send(db, api_key, payload)
+    except SendError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    status_value = log.status
+    if log.status == EmailStatus.QUEUED:
+        if settings.inline_send:
+            status_value = await perform_ses_send(log.id, payload) or log.status
+        else:
+            background_tasks.add_task(perform_ses_send, log.id, payload)
+    return EmailSendResponse(message_id=log.message_id, status=status_value.value)

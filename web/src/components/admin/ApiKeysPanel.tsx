@@ -18,12 +18,11 @@ import {
   API_KEY_SCOPES,
   DAILY_QUOTA_OPTIONS,
   MONTHLY_QUOTA_OPTIONS,
-  createApiKey,
+  createRemoteApiKey,
+  deleteRemoteApiKey,
+  fetchApiKeys,
   formatQuota,
-  readStoredApiKeys,
-  removeStoredApiKey,
-  revokeStoredApiKey,
-  writeStoredApiKeys,
+  revokeRemoteApiKey,
 } from "../../lib/apiKeys";
 import {
   BTN_GHOST,
@@ -31,6 +30,8 @@ import {
   FIELD_COMPACT,
   PORTAL_SURFACE,
 } from "../../lib/consoleUi";
+import { PageLoading } from "../ui/ScanLoading";
+import { useConsoleAccount } from "./consoleAccount";
 
 const SELECT =
   "h-11 w-full appearance-none rounded-sm border border-neutral-200 bg-neutral-50 bg-[length:16px] bg-[right_12px_center] bg-no-repeat px-4 pr-10 text-sm text-neutral-950 outline-none focus:border-[#0A4BD6] focus:bg-white focus:ring-2 focus:ring-[#0A4BD6]/20";
@@ -68,7 +69,11 @@ function resetFormDefaults() {
 
 export default function ApiKeysPanel() {
   const titleId = useId();
-  const [keys, setKeys] = useState<ConsoleApiKey[]>(() => readStoredApiKeys());
+  const { isAdmin } = useConsoleAccount();
+  const [keys, setKeys] = useState<ConsoleApiKey[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(resetFormDefaults);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +86,25 @@ export default function ApiKeysPanel() {
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const nameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchApiKeys()
+      .then((rows) => {
+        if (!cancelled) setKeys(rows);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setLoadError(reason instanceof Error ? reason.message : "Could not load API keys.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function toggleScope(scope: ApiKeyScope) {
     setForm((current) => ({
@@ -165,7 +189,7 @@ export default function ApiKeysPanel() {
     };
   }, [menuId]);
 
-  function addKey() {
+  async function addKey() {
     const label = form.name.trim();
     setError(null);
     if (!label) {
@@ -181,30 +205,45 @@ export default function ApiKeysPanel() {
       return;
     }
 
-    const key = createApiKey({
-      name: label,
-      mode: "live",
-      scopes: form.scopes,
-      dailyQuota: form.dailyQuota,
-      monthlyQuota: form.monthlyQuota,
-    });
-    const next = [toStoredView(key), ...keys];
-    setKeys(next);
-    writeStoredApiKeys(next);
-    setForm(resetFormDefaults());
-    setRevealed(key);
+    setSaving(true);
+    try {
+      const key = await createRemoteApiKey({
+        name: label,
+        mode: "live",
+        scopes: form.scopes,
+        dailyQuota: isAdmin ? form.dailyQuota : null,
+        monthlyQuota: isAdmin ? form.monthlyQuota : null,
+      });
+      setKeys((current) => [toStoredView(key), ...current]);
+      setForm(resetFormDefaults());
+      setRevealed(key);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Could not create the key.");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function revokeKey(id: string) {
-    const next = revokeStoredApiKey(id);
-    setKeys(next);
+  async function revokeKey(id: string) {
     closeMenu();
+    try {
+      const next = await revokeRemoteApiKey(id);
+      setKeys((current) => current.map((key) => (key.id === id ? next : key)));
+      setLoadError(null);
+    } catch (reason: unknown) {
+      setLoadError(reason instanceof Error ? reason.message : "Could not revoke the key.");
+    }
   }
 
-  function deleteKey(id: string) {
-    const next = removeStoredApiKey(id);
-    setKeys(next);
+  async function deleteKey(id: string) {
     closeMenu();
+    try {
+      await deleteRemoteApiKey(id);
+      setKeys((current) => current.filter((key) => key.id !== id));
+      setLoadError(null);
+    } catch (reason: unknown) {
+      setLoadError(reason instanceof Error ? reason.message : "Could not delete the key.");
+    }
   }
 
   const menuKey = menuId ? keys.find((key) => key.id === menuId) : null;
@@ -217,12 +256,17 @@ export default function ApiKeysPanel() {
 
   const activeCount = keys.filter((key) => key.status === "active").length;
 
+  if (loading) {
+    return <PageLoading>Loading keys…</PageLoading>;
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-neutral-500">
           Secrets are shown once. Keys are hashed at rest (SHA-256).
         </p>
+        {loadError ? <p className="text-sm text-red-600">{loadError}</p> : null}
         <button type="button" onClick={openCreateModal} className={BTN_PRIMARY}>
           <KeyRound className="size-3.5" aria-hidden="true" />
           Generate key
@@ -387,7 +431,9 @@ export default function ApiKeysPanel() {
                     <p className="mt-1 text-sm text-neutral-500">
                       {revealed?.secret
                         ? `${revealed.name} · shown once, then hashed at rest.`
-                        : "Name, permissions and send quotas."}
+                        : isAdmin
+                          ? "Name, permissions and send quotas."
+                          : "Name and permissions. Send quotas stay the ones set for this account."}
                     </p>
                   </div>
                   <button
@@ -518,6 +564,7 @@ export default function ApiKeysPanel() {
                         </div>
                       </fieldset>
 
+                      {isAdmin ? (
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div>
                           <label
@@ -587,6 +634,7 @@ export default function ApiKeysPanel() {
                           </select>
                         </div>
                       </div>
+                      ) : null}
 
                       {error ? (
                         <p className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
@@ -611,10 +659,11 @@ export default function ApiKeysPanel() {
                           <button
                             type="button"
                             className={BTN_PRIMARY}
-                            onClick={addKey}
+                            onClick={() => void addKey()}
+                            disabled={saving}
                           >
                             <KeyRound className="size-3.5" aria-hidden="true" />
-                            Generate key
+                            {saving ? "Generating…" : "Generate key"}
                           </button>
                         </div>
                       </div>

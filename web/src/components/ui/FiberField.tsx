@@ -89,7 +89,7 @@ function beamBoxes(beam: BeamState, pos: number): Box[] {
     }));
   }
   const boxes: Box[] = [];
-  const steps = 7;
+  const steps = 3;
   for (let i = 0; i <= steps; i += 1) {
     const at = (pos + (beam.dash * i) / steps) % beam.length;
     const point = beam.path.getPointAtLength(at);
@@ -182,6 +182,7 @@ type FiberFieldProps = {
 };
 
 export default function FiberField({ intensity = 1 }: FiberFieldProps) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const pathRefs = useRef<Array<SVGPathElement | null>>([]);
   const nodeRefs = useRef<Array<SVGCircleElement | null>>([]);
   const opacity = Math.min(1, Math.max(0, intensity));
@@ -232,39 +233,53 @@ export default function FiberField({ intensity = 1 }: FiberFieldProps) {
       const [i] = clash;
       states[i].pos = (states[i].pos + 110) % states[i].length;
     }
+    for (const [index, beam] of states.entries()) {
+      beam.path.setAttribute("stroke-dashoffset", String(-beam.pos));
+      const node = beam.node ? nodeRefs.current[index] : null;
+      if (node) {
+        const point = beam.path.getPointAtLength(beam.pos);
+        node.setAttribute("cx", String(point.x));
+        node.setAttribute("cy", String(point.y));
+      }
+    }
 
     let frame = 0;
     let last = performance.now();
     let alternate = 0;
+    let tickIndex = 0;
+    let running = false;
+    let onScreen = true;
     const activeBoost = new Map<string, number>();
 
     const tick = (now: number) => {
+      frame = 0;
+      if (!running) {
+        return;
+      }
       const dt = Math.min((now - last) / 1000, 0.032);
       last = now;
+      tickIndex += 1;
 
-      let clash = anyClashAt(states.map((beam) => beam.pos));
-      if (!clash) {
-        for (const horizon of [0.3, 0.65, 1]) {
-          const future = states.map((beam) => (beam.pos + beam.speed * horizon) % beam.length);
+      if (tickIndex % 4 === 0) {
+        let clash = anyClashAt(states.map((beam) => beam.pos));
+        if (!clash) {
+          const future = states.map((beam) => (beam.pos + beam.speed * 0.6) % beam.length);
           clash = anyClashAt(future);
-          if (clash) {
-            break;
-          }
         }
-      }
 
-      if (clash) {
-        const [i, j] = clash;
-        const key = pairKey(states[i], states[j]);
-        let pickIndex = activeBoost.get(key);
-        if (pickIndex === undefined || (pickIndex !== i && pickIndex !== j)) {
-          pickIndex = alternate % 2 === 0 ? i : j;
-          alternate += 1;
-          activeBoost.set(key, pickIndex);
+        if (clash) {
+          const [i, j] = clash;
+          const key = pairKey(states[i], states[j]);
+          let pickIndex = activeBoost.get(key);
+          if (pickIndex === undefined || (pickIndex !== i && pickIndex !== j)) {
+            pickIndex = alternate % 2 === 0 ? i : j;
+            alternate += 1;
+            activeBoost.set(key, pickIndex);
+          }
+          accelerate(states[pickIndex], now);
+        } else {
+          activeBoost.clear();
         }
-        accelerate(states[pickIndex], now);
-      } else {
-        activeBoost.clear();
       }
 
       for (const beam of states) {
@@ -290,15 +305,83 @@ export default function FiberField({ intensity = 1 }: FiberFieldProps) {
         }
       }
 
-      frame = window.requestAnimationFrame(tick);
+      if (running) {
+        frame = window.requestAnimationFrame(tick);
+      }
     };
 
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
+    let ready = false;
+    const start = () => {
+      if (!ready || running || document.hidden || !onScreen) {
+        return;
+      }
+      running = true;
+      last = performance.now();
+      if (frame === 0) {
+        frame = window.requestAnimationFrame(tick);
+      }
+    };
+
+    const stop = () => {
+      running = false;
+      if (frame !== 0) {
+        window.cancelAnimationFrame(frame);
+        frame = 0;
+      }
+    };
+
+    const host = hostRef.current;
+    const observer = new IntersectionObserver(([entry]) => {
+      onScreen = entry.isIntersecting;
+      if (onScreen) {
+        start();
+      } else {
+        stop();
+      }
+    });
+    if (host) {
+      observer.observe(host);
+    }
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        start();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const hasIdle = typeof window.requestIdleCallback === "function";
+    let idle = 0;
+    const begin = () => {
+      ready = true;
+      start();
+    };
+    const schedule = () => {
+      idle = hasIdle
+        ? window.requestIdleCallback(begin, { timeout: 2500 })
+        : window.setTimeout(begin, 1200);
+    };
+    if (document.readyState === "complete") schedule();
+    else window.addEventListener("load", schedule, { once: true });
+
+    return () => {
+      running = false;
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("load", schedule);
+      if (!ready) {
+        if (hasIdle) window.cancelIdleCallback(idle);
+        else window.clearTimeout(idle);
+      }
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   return (
     <div
+      ref={hostRef}
       className="pointer-events-none absolute inset-0 overflow-hidden"
       style={{ opacity }}
       aria-hidden="true"
@@ -310,23 +393,6 @@ export default function FiberField({ intensity = 1 }: FiberFieldProps) {
         fill="none"
         preserveAspectRatio="xMidYMid slice"
       >
-        <defs>
-          <filter
-            id="hero-fiber-glow"
-            x="-80"
-            y="-80"
-            width="1600"
-            height="1060"
-            filterUnits="userSpaceOnUse"
-          >
-            <feGaussianBlur stdDeviation="4" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-
         <RadialBurst cx={1180} cy={210} />
         <rect x="64" y="88" width="1312" height="748" rx="4" stroke="#FFFFFF" strokeOpacity="0.15" />
         <rect x="248" y="28" width="1160" height="844" rx="4" stroke="#FFFFFF" strokeOpacity="0.1" />
@@ -343,7 +409,6 @@ export default function FiberField({ intensity = 1 }: FiberFieldProps) {
               strokeWidth={beam.axis === "v" ? 2 : 2.2}
               strokeLinecap={beam.axis === "v" ? "butt" : "round"}
               fill="none"
-              filter="url(#hero-fiber-glow)"
             />
             {beam.node ? (
               <circle
@@ -352,7 +417,6 @@ export default function FiberField({ intensity = 1 }: FiberFieldProps) {
                 }}
                 r="3.5"
                 fill="#FFFFFF"
-                filter="url(#hero-fiber-glow)"
                 opacity="0.95"
               />
             ) : null}

@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, String, func, text
+from sqlalchemy import DateTime, Enum, ForeignKey, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,12 @@ class Suppression(Base):
         primary_key=True,
         default=uuid.uuid4,
         server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
     reason: Mapped[SuppressionReason] = mapped_column(

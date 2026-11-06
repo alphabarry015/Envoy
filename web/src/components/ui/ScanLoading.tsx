@@ -42,6 +42,21 @@ type ScanLoadingProps = {
   size?: "sm" | "md";
 };
 
+/** Centers the scan chip in the page content area. */
+export function PageLoading({
+  children,
+  className = "min-h-[calc(100svh-11rem)]",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex w-full items-center justify-center ${className}`}>
+      <ScanLoading size="md">{children}</ScanLoading>
+    </div>
+  );
+}
+
 /** Non-interactive loading chip with the Envoy scan animation. */
 export function ScanLoading({
   children,

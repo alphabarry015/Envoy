@@ -5,34 +5,103 @@ const STORAGE_KEY = "envoy.console.session";
 export type ConsoleSession = {
   email: string;
   signedInAt: string;
+  accessToken: string;
 };
+
+function apiUrl(): string {
+  return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+}
 
 function isSession(value: unknown): value is ConsoleSession {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
-  return typeof record.email === "string" && typeof record.signedInAt === "string";
+  return (
+    typeof record.email === "string" &&
+    typeof record.signedInAt === "string" &&
+    typeof record.accessToken === "string" &&
+    record.accessToken.length > 0
+  );
+}
+
+async function readError(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    if (typeof body.detail === "string") return body.detail;
+  } catch {
+    /* réponse non JSON */
+  }
+  return "Authentication failed.";
 }
 
 export function readSession(): ConsoleSession | null {
   return readJsonStorage(sessionStorage, STORAGE_KEY, isSession);
 }
 
-/**
- * Dev-only UI gate — NOT production auth.
- * Any non-empty email + password opens the console mock.
- * Replace with JWT / invite flow before shipping.
- */
-export function signIn(email: string, password: string): ConsoleSession {
+function storeSession(email: string, accessToken: string): ConsoleSession {
+  const session: ConsoleSession = {
+    email: email.trim().toLowerCase(),
+    signedInAt: new Date().toISOString(),
+    accessToken,
+  };
+  writeJsonStorage(sessionStorage, STORAGE_KEY, session);
+  return session;
+}
+
+export async function signIn(email: string, password: string): Promise<ConsoleSession> {
   const trimmed = email.trim().toLowerCase();
   if (!trimmed || !password) {
     throw new Error("Email and password are required.");
   }
-  const session: ConsoleSession = {
-    email: trimmed,
-    signedInAt: new Date().toISOString(),
-  };
-  writeJsonStorage(sessionStorage, STORAGE_KEY, session);
-  return session;
+  const baseUrl = apiUrl();
+  if (!baseUrl) {
+    throw new Error("VITE_API_URL is not set.");
+  }
+  const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: trimmed, password }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  const body = (await response.json()) as { access_token?: string; user?: { email?: string } };
+  if (!body.access_token) {
+    throw new Error("Authentication failed.");
+  }
+  return storeSession(body.user?.email || trimmed, body.access_token);
+}
+
+export async function acceptInvite(
+  token: string,
+  password: string,
+  passwordConfirm: string,
+): Promise<ConsoleSession> {
+  const baseUrl = apiUrl();
+  if (!baseUrl) {
+    throw new Error("VITE_API_URL is not set.");
+  }
+  const response = await fetch(`${baseUrl}/api/v1/auth/accept-invite`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      token: token.trim(),
+      password,
+      password_confirm: passwordConfirm,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  const body = (await response.json()) as { access_token?: string; user?: { email?: string } };
+  if (!body.access_token || !body.user?.email) {
+    throw new Error("Authentication failed.");
+  }
+  return storeSession(body.user.email, body.access_token);
+}
+
+export function authHeader(): HeadersInit {
+  const session = readSession();
+  return session ? { Authorization: `Bearer ${session.accessToken}` } : {};
 }
 
 export function signOut() {

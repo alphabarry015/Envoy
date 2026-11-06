@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, func, text
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -69,6 +69,8 @@ class Domain(Base):
         server_default=DkimStatus.NOT_STARTED.value,
     )
     ses_identity_arn: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    dkim_selector: Mapped[str | None] = mapped_column(String(63), nullable=True)
+    encrypted_dkim_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     dns_records: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,

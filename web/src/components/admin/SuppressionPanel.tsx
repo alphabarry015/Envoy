@@ -9,15 +9,16 @@ import {
   FIELD_COMPACT,
   PORTAL_SURFACE,
 } from "../../lib/consoleUi";
+import { PageLoading } from "../ui/ScanLoading";
 import {
   type SuppressionEntry,
   type SuppressionReason,
   REASON_LABELS,
   SUPPRESSION_REASONS,
-  createSuppression,
+  createRemoteSuppression,
+  deleteRemoteSuppression,
+  fetchSuppressions,
   filterSuppressions,
-  readStoredSuppressions,
-  writeStoredSuppressions,
 } from "../../lib/suppression";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -47,15 +48,33 @@ function formatWhen(iso: string) {
 export default function SuppressionPanel() {
   const titleId = useId();
   const emailRef = useRef<HTMLInputElement>(null);
-  const [entries, setEntries] = useState<SuppressionEntry[]>(() =>
-    readStoredSuppressions(),
-  );
+  const [entries, setEntries] = useState<SuppressionEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [reason, setReason] = useState<SuppressionReason | "all">("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [nextReason, setNextReason] = useState<SuppressionReason>("manual");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSuppressions()
+      .then((rows) => {
+        if (!cancelled) setEntries(rows);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setLoadError(cause instanceof Error ? cause.message : "Could not load addresses.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const visible = filterSuppressions(entries, query, reason);
 
@@ -81,7 +100,7 @@ export default function SuppressionPanel() {
     };
   }, [modalOpen]);
 
-  function addEntry() {
+  async function addEntry() {
     const normalized = email.trim().toLowerCase();
     setError(null);
     if (!EMAIL_PATTERN.test(normalized)) {
@@ -92,16 +111,31 @@ export default function SuppressionPanel() {
       setError("This address is already suppressed.");
       return;
     }
-    const next = [createSuppression(normalized, nextReason), ...entries];
-    setEntries(next);
-    writeStoredSuppressions(next);
-    closeModal();
+    setSaving(true);
+    try {
+      const created = await createRemoteSuppression(normalized, nextReason);
+      setEntries((current) => [created, ...current]);
+      closeModal();
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Could not block this address.");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function removeEntry(id: string) {
-    const next = entries.filter((entry) => entry.id !== id);
-    setEntries(next);
-    writeStoredSuppressions(next);
+  async function removeEntry(id: string) {
+    const previous = entries;
+    setEntries((current) => current.filter((entry) => entry.id !== id));
+    try {
+      await deleteRemoteSuppression(id);
+    } catch (cause: unknown) {
+      setEntries(previous);
+      setLoadError(cause instanceof Error ? cause.message : "Could not remove this address.");
+    }
+  }
+
+  if (loading) {
+    return <PageLoading>Loading addresses…</PageLoading>;
   }
 
   return (
@@ -111,6 +145,7 @@ export default function SuppressionPanel() {
           Hard bounces and complaints from SNS land here. Sends to these
           addresses are blocked before SES.
         </p>
+        {loadError ? <p className="w-full text-sm text-red-600">{loadError}</p> : null}
         <button
           type="button"
           className={BTN_PRIMARY}
@@ -314,8 +349,8 @@ export default function SuppressionPanel() {
                   <button type="button" className={BTN_GHOST} onClick={closeModal}>
                     Cancel
                   </button>
-                  <button type="button" className={BTN_PRIMARY} onClick={addEntry}>
-                    Block address
+                  <button type="button" className={BTN_PRIMARY} onClick={() => void addEntry()} disabled={saving}>
+                    {saving ? "Blocking…" : "Block address"}
                   </button>
                 </div>
               </div>
