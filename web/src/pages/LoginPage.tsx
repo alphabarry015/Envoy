@@ -1,7 +1,7 @@
-import { KeyRound, Lock, Shield } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useState, type FormEvent } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 
 import SiteHeader from "../components/SiteHeader";
 import FiberField from "../components/ui/FiberField";
@@ -63,48 +63,12 @@ export default function LoginPage() {
       <FiberField intensity={0.28} />
       <SiteHeader variant="overlay" />
 
-      <div className="relative z-10 mx-auto grid w-full max-w-[92rem] flex-1 items-center gap-8 px-4 py-8 sm:px-5 md:gap-12 md:px-8 md:py-20 lg:grid-cols-12 lg:gap-16 lg:py-24">
-        <div className="max-lg:order-2 lg:col-span-5">
-          <p className="mb-6 font-mono text-xs tracking-widest text-white/80 uppercase">
-            <span aria-hidden="true">■ </span>
-            Private console
-          </p>
-          <h1 className="max-w-xl text-3xl leading-tight font-semibold tracking-tight sm:text-4xl md:text-6xl">
-            Sign in{" "}
-            <span className="block">to the console.</span>
-          </h1>
-          <p className="mt-6 max-w-md text-base leading-relaxed text-white/80 md:text-lg">
-            The console is available to administrators and invited members.
-            There is no public sign-up.
-          </p>
-
-          <div className="mt-8 flex flex-wrap gap-3">
-            <span className="inline-flex items-center gap-2 rounded-sm border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-white/75">
-              <Shield className="size-3.5 text-[#9ec4ff]" aria-hidden="true" />
-              Invite-only
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-sm border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-white/75">
-              <Lock className="size-3.5 text-[#9ec4ff]" aria-hidden="true" />
-              Hashed credentials
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-sm border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-white/75">
-              <KeyRound className="size-3.5 text-[#9ec4ff]" aria-hidden="true" />
-              Workspace keys
-            </span>
-          </div>
-
-          <p className="mt-10 text-sm text-white/80">
-            Need a seat?{" "}
-            <Link
-              to="/request-access"
-              className="font-medium text-white underline-offset-4 hover:underline"
-            >
-              Request access
-            </Link>
-          </p>
-        </div>
-
-        <div className="max-lg:order-1 lg:col-span-7">
+      <div className="relative z-10 mx-auto flex w-full max-w-3xl flex-1 flex-col justify-start px-4 py-8 sm:px-5 md:px-8 md:py-16">
+        <h1 className="mb-8 text-3xl leading-tight font-semibold tracking-tight sm:text-4xl md:text-5xl">
+          Sign in{" "}
+          <span className="block">to the console.</span>
+        </h1>
+        <div>
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
