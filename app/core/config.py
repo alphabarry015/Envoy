@@ -96,7 +96,6 @@ class Settings(BaseSettings):
         "supabase_anon_key",
         "supabase_service_role_key",
         "supabase_db_password",
-        "postgres_password",
         "bootstrap_admin_email",
         "bootstrap_admin_password",
         "cors_origin_regex",
@@ -112,6 +111,13 @@ class Settings(BaseSettings):
         if isinstance(value, str) and value.strip() == "":
             return None
         return value
+
+    @field_validator("postgres_password", mode="before")
+    @classmethod
+    def blank_postgres_password(cls, value: object) -> str:
+        if value is None:
+            return ""
+        return str(value)
 
     @field_validator("api_key_prefix")
     @classmethod
