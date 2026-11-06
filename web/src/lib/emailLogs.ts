@@ -1,3 +1,4 @@
+import { apiBase as apiUrl } from "./apiBase";
 import { authHeader } from "./auth";
 
 /** Aligns with the backend EmailStatus enum. */
@@ -61,10 +62,6 @@ type LogPayload = {
   sent_at: string | null;
 };
 
-function apiUrl(): string {
-  return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-}
-
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
@@ -110,7 +107,6 @@ function fromPayload(row: LogPayload): ConsoleEmailLog {
 
 async function logRequest(path: string): Promise<Response> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   return fetch(`${baseUrl}/api/v1/logs${path}`, { headers: authHeader() });
 }
 

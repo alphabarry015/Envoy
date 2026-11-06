@@ -18,6 +18,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 
+import { apiBase } from "../../lib/apiBase";
+
 import { accountInitials, accountName } from "../../lib/account";
 import { authHeader, readSession, signOut } from "../../lib/auth";
 import { ConsoleAccountProvider } from "./consoleAccount";
@@ -131,7 +133,7 @@ export default function AdminLayout() {
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
-    const baseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+    const baseUrl = apiBase();
     fetch(`${baseUrl}/api/v1/auth/me`, { headers: authHeader() })
       .then(async (response) => {
         if (response.status === 401) {

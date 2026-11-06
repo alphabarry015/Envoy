@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { apiBase } from "../../lib/apiBase";
 import { authHeader, readSession, signOut } from "../../lib/auth";
 import { BTN_PRIMARY, FIELD_COMPACT, KICKER } from "../../lib/consoleUi";
 import { PageLoading } from "../ui/ScanLoading";
@@ -55,7 +56,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    const baseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+    const baseUrl = apiBase();
     fetch(`${baseUrl}/api/v1/auth/me`, { headers: authHeader() })
       .then(async (response) => {
         if (!response.ok) throw new Error("Could not load settings.");
@@ -82,7 +83,7 @@ export default function SettingsPage() {
     }
     setSaving(true);
     try {
-      const baseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+      const baseUrl = apiBase();
       const response = await fetch(`${baseUrl}/api/v1/auth/password`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeader() },

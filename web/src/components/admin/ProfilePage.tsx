@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { accountInitials, accountName } from "../../lib/account";
+import { apiBase } from "../../lib/apiBase";
 import { authHeader } from "../../lib/auth";
 import { KICKER } from "../../lib/consoleUi";
 import { PageLoading } from "../ui/ScanLoading";
@@ -43,7 +44,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     let cancelled = false;
-    const baseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+    const baseUrl = apiBase();
     fetch(`${baseUrl}/api/v1/auth/me`, { headers: authHeader() })
       .then(async (response) => {
         if (!response.ok) throw new Error("Could not load this profile.");

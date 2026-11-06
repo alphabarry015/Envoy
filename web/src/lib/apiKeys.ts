@@ -1,3 +1,4 @@
+import { apiBase as apiUrl } from "./apiBase";
 import { authHeader } from "./auth";
 
 export type ApiKeyStatus = "active" | "revoked";
@@ -122,10 +123,6 @@ type ApiKeyPayload = {
   key?: string;
 };
 
-function apiUrl(): string {
-  return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-}
-
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
@@ -155,7 +152,6 @@ function fromPayload(row: ApiKeyPayload): ConsoleApiKey {
 
 export async function fetchApiKeys(): Promise<ConsoleApiKey[]> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   const response = await fetch(`${baseUrl}/api/v1/api-keys`, { headers: authHeader() });
   if (!response.ok) throw new Error(await readError(response));
   const body = (await response.json()) as ApiKeyPayload[];
@@ -164,7 +160,6 @@ export async function fetchApiKeys(): Promise<ConsoleApiKey[]> {
 
 export async function createRemoteApiKey(input: CreateApiKeyInput): Promise<ConsoleApiKey> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   const response = await fetch(`${baseUrl}/api/v1/api-keys`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeader() },
@@ -182,7 +177,6 @@ export async function createRemoteApiKey(input: CreateApiKeyInput): Promise<Cons
 
 export async function revokeRemoteApiKey(id: string): Promise<ConsoleApiKey> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   const response = await fetch(`${baseUrl}/api/v1/api-keys/${id}/revoke`, {
     method: "POST",
     headers: authHeader(),
@@ -193,7 +187,6 @@ export async function revokeRemoteApiKey(id: string): Promise<ConsoleApiKey> {
 
 export async function deleteRemoteApiKey(id: string): Promise<void> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   const response = await fetch(`${baseUrl}/api/v1/api-keys/${id}`, {
     method: "DELETE",
     headers: authHeader(),

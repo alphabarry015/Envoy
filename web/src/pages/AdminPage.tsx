@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { apiBase } from "../lib/apiBase";
 import { authHeader } from "../lib/auth";
 import { formatSentAgo } from "../lib/emails";
 import { PageLoading } from "../components/ui/ScanLoading";
@@ -33,7 +34,7 @@ export function OverviewPanel() {
 
   useEffect(() => {
     let cancelled = false;
-    const baseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+    const baseUrl = apiBase();
     fetch(`${baseUrl}/api/v1/overview`, { headers: authHeader() })
       .then(async (response) => {
         if (!response.ok) throw new Error("Could not load the overview.");

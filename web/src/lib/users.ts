@@ -1,3 +1,4 @@
+import { apiBase as apiUrl } from "./apiBase";
 import { authHeader } from "./auth";
 
 export type UserRole = "admin" | "member";
@@ -50,10 +51,6 @@ type InviteResponse = {
   invite_token: string;
   expires_at: string;
 };
-
-function apiUrl(): string {
-  return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-}
 
 function apiRole(role: UserRole): "admin" | "user" {
   return role === "admin" ? "admin" : "user";

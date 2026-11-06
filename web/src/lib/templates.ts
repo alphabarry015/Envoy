@@ -1,3 +1,4 @@
+import { apiBase as apiUrl } from "./apiBase";
 import { authHeader } from "./auth";
 
 export type TemplateStatus = "draft" | "published";
@@ -111,10 +112,6 @@ type TemplatePayload = {
   updated_at: string;
 };
 
-function apiUrl(): string {
-  return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-}
-
 async function readError(response: Response, fallback: string): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
@@ -163,7 +160,6 @@ function toPayload(template: ConsoleTemplate) {
 
 async function templateRequest(path: string, init: RequestInit): Promise<Response> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   const headers = new Headers(init.headers);
   new Headers(authHeader()).forEach((value, key) => headers.set(key, value));
   if (init.body) headers.set("Content-Type", "application/json");

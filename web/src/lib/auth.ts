@@ -1,3 +1,4 @@
+import { apiBase as apiUrl } from "./apiBase";
 import { readJsonStorage, removeStorage, writeJsonStorage } from "./safeStorage";
 
 const STORAGE_KEY = "envoy.console.session";
@@ -7,10 +8,6 @@ export type ConsoleSession = {
   signedInAt: string;
   accessToken: string;
 };
-
-function apiUrl(): string {
-  return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-}
 
 function isSession(value: unknown): value is ConsoleSession {
   if (!value || typeof value !== "object") return false;
@@ -52,11 +49,7 @@ export async function signIn(email: string, password: string): Promise<ConsoleSe
   if (!trimmed || !password) {
     throw new Error("Email and password are required.");
   }
-  const baseUrl = apiUrl();
-  if (!baseUrl) {
-    throw new Error("VITE_API_URL is not set.");
-  }
-  const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+  const response = await fetch(`${apiUrl()}/api/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: trimmed, password }),
@@ -76,11 +69,7 @@ export async function acceptInvite(
   password: string,
   passwordConfirm: string,
 ): Promise<ConsoleSession> {
-  const baseUrl = apiUrl();
-  if (!baseUrl) {
-    throw new Error("VITE_API_URL is not set.");
-  }
-  const response = await fetch(`${baseUrl}/api/v1/auth/accept-invite`, {
+  const response = await fetch(`${apiUrl()}/api/v1/auth/accept-invite`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

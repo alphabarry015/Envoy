@@ -1,3 +1,4 @@
+import { apiBase as apiUrl } from "./apiBase";
 import { authHeader } from "./auth";
 
 export const WEBHOOK_EVENTS = [
@@ -100,10 +101,6 @@ type WebhookPayload = {
   secret?: string;
 };
 
-function apiUrl(): string {
-  return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-}
-
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
@@ -130,7 +127,6 @@ function fromPayload(row: WebhookPayload): ConsoleWebhook {
 
 async function webhookRequest(path: string, init: RequestInit): Promise<Response> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   const headers = new Headers(init.headers);
   const auth = new Headers(authHeader());
   auth.forEach((value, key) => headers.set(key, value));

@@ -1,3 +1,4 @@
+import { apiBase as apiUrl } from "./apiBase";
 import { authHeader } from "./auth";
 
 export type DnsRecord = {
@@ -172,10 +173,6 @@ type DomainPayload = {
   mail_from?: string;
 };
 
-function apiUrl(): string {
-  return (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-}
-
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
@@ -203,7 +200,6 @@ function fromPayload(row: DomainPayload): ConsoleDomain {
 
 export async function fetchDomains(): Promise<ConsoleDomain[]> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   const response = await fetch(`${baseUrl}/api/v1/domains`, { headers: authHeader() });
   if (!response.ok) throw new Error(await readError(response));
   const body = (await response.json()) as { items: DomainPayload[] };
@@ -212,7 +208,6 @@ export async function fetchDomains(): Promise<ConsoleDomain[]> {
 
 export async function fetchDomain(id: string): Promise<ConsoleDomain | null> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   const response = await fetch(`${baseUrl}/api/v1/domains/${id}`, { headers: authHeader() });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(await readError(response));
@@ -221,7 +216,6 @@ export async function fetchDomain(id: string): Promise<ConsoleDomain | null> {
 
 export async function connectRemoteDomain(name: string): Promise<ConsoleDomain> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   const response = await fetch(`${baseUrl}/api/v1/domains`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeader() },
@@ -233,7 +227,6 @@ export async function connectRemoteDomain(name: string): Promise<ConsoleDomain> 
 
 export async function verifyRemoteDomain(id: string): Promise<ConsoleDomain> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   const response = await fetch(`${baseUrl}/api/v1/domains/${id}/verify`, { headers: authHeader() });
   if (!response.ok) throw new Error(await readError(response));
   const current = await fetchDomain(id);
@@ -243,7 +236,6 @@ export async function verifyRemoteDomain(id: string): Promise<ConsoleDomain> {
 
 export async function disconnectRemoteDomain(id: string): Promise<void> {
   const baseUrl = apiUrl();
-  if (!baseUrl) throw new Error("VITE_API_URL is not set.");
   const response = await fetch(`${baseUrl}/api/v1/domains/${id}`, {
     method: "DELETE",
     headers: authHeader(),
