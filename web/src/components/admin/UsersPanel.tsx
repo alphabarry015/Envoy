@@ -1,4 +1,4 @@
-import { MoreVertical, UserPlus, X } from "lucide-react";
+import { Check, Copy, MoreVertical, UserPlus, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -21,6 +21,7 @@ import { onRealtime } from "../../lib/realtime";
 import { PageLoading } from "../ui/ScanLoading";
 import {
   type ConsoleUser,
+  type IssuedInvite,
   type UserRole,
   type UserStatus,
   DOMAIN_QUOTA_OPTIONS,
@@ -54,10 +55,6 @@ type FormState = {
   provider: ProviderId;
 };
 
-type IssuedInvite = {
-  email: string;
-};
-
 function emptyForm(provider: ProviderId = "ses"): FormState {
   return {
     name: "",
@@ -74,7 +71,10 @@ function emptyForm(provider: ProviderId = "ses"): FormState {
   };
 }
 
-function formFromUser(user: ConsoleUser, provider: ProviderId = "ses"): FormState {
+function formFromUser(
+  user: ConsoleUser,
+  provider: ProviderId = "ses",
+): FormState {
   return {
     name: user.name ?? "",
     email: user.email,
@@ -131,7 +131,10 @@ export default function UsersPanel() {
   async function reload() {
     setLoadError(null);
     try {
-      const [nextUsers, providers] = await Promise.all([fetchUsers(), fetchProviders()]);
+      const [nextUsers, providers] = await Promise.all([
+        fetchUsers(),
+        fetchProviders(),
+      ]);
       setUsers(nextUsers);
       const ready = PROVIDER_OPTIONS.map((item) => item.id).filter((id) => {
         const row = providers.items.find((item) => item.id === id);
@@ -140,12 +143,14 @@ export default function UsersPanel() {
       const tools = ready.length > 0 ? ready : (["ses"] as ProviderId[]);
       setConnectedTools(tools);
       const preferred =
-        (providers.effective_order.find((id) => tools.includes(id as ProviderId)) as
-          | ProviderId
-          | undefined) ?? tools[0];
+        (providers.effective_order.find((id) =>
+          tools.includes(id as ProviderId),
+        ) as ProviderId | undefined) ?? tools[0];
       setDefaultProvider(preferred);
     } catch (cause: unknown) {
-      setLoadError(cause instanceof Error ? cause.message : "Could not load users.");
+      setLoadError(
+        cause instanceof Error ? cause.message : "Could not load users.",
+      );
     } finally {
       setLoading(false);
     }
@@ -260,7 +265,10 @@ export default function UsersPanel() {
       return;
     }
     const days = Math.trunc(form.expiresDays);
-    if (form.expiresOther && (!Number.isInteger(days) || days < 1 || days > 365)) {
+    if (
+      form.expiresOther &&
+      (!Number.isInteger(days) || days < 1 || days > 365)
+    ) {
       setError("Enter a number of days between 1 and 365.");
       return;
     }
@@ -276,7 +284,9 @@ export default function UsersPanel() {
       await reload();
       setIssued(issuedInvite);
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "Could not send the invite.");
+      setError(
+        cause instanceof Error ? cause.message : "Could not send the invite.",
+      );
     } finally {
       setSaving(false);
     }
@@ -299,7 +309,9 @@ export default function UsersPanel() {
       await reload();
       closeModal();
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "Could not update this user.");
+      setError(
+        cause instanceof Error ? cause.message : "Could not update this user.",
+      );
     } finally {
       setSaving(false);
     }
@@ -312,7 +324,9 @@ export default function UsersPanel() {
       await setUserStatus(user, status);
       await reload();
     } catch (cause: unknown) {
-      setLoadError(cause instanceof Error ? cause.message : "Could not update this user.");
+      setLoadError(
+        cause instanceof Error ? cause.message : "Could not update this user.",
+      );
     }
   }
 
@@ -323,7 +337,11 @@ export default function UsersPanel() {
       await revokeUserInvite(id);
       await reload();
     } catch (cause: unknown) {
-      setLoadError(cause instanceof Error ? cause.message : "Could not revoke this invite.");
+      setLoadError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not revoke this invite.",
+      );
     }
   }
 
@@ -349,7 +367,9 @@ export default function UsersPanel() {
             Workspace seats · {seats.length} · {pendingCount} pending
           </p>
         </div>
-        {loadError ? <p className="px-5 py-4 text-sm text-red-600">{loadError}</p> : null}
+        {loadError ? (
+          <p className="px-5 py-4 text-sm text-red-600">{loadError}</p>
+        ) : null}
         {seats.length === 0 && !loadError ? (
           <div className="flex flex-col items-center px-5 py-12 text-center">
             <UserPlus className="size-8 text-neutral-300" aria-hidden="true" />
@@ -392,13 +412,17 @@ export default function UsersPanel() {
                           className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm bg-[#0A4BD6] text-[11px] font-semibold tracking-wide text-white"
                           aria-hidden="true"
                         >
-                          {accountInitials(user.name?.trim() || accountName(user.email))}
+                          {accountInitials(
+                            user.name?.trim() || accountName(user.email),
+                          )}
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate font-medium text-neutral-950">
                             {user.name?.trim() || accountName(user.email)}
                           </span>
-                          <span className="block truncate text-neutral-500">{user.email}</span>
+                          <span className="block truncate text-neutral-500">
+                            {user.email}
+                          </span>
                           {user.status === "pending" && user.expiresAt ? (
                             <span className="mt-1 block font-mono text-[11px] text-neutral-400">
                               Expires {formatWhen(user.expiresAt)}
@@ -463,21 +487,31 @@ export default function UsersPanel() {
                 <div className="flex shrink-0 items-center justify-between gap-4 border-b border-neutral-200 px-6 py-5">
                   <div className="min-w-0">
                     <p className="font-mono text-[11px] tracking-widest text-[#0A4BD6] uppercase">
-                      {issued ? "Invitation sent" : editing ? "Access" : "Invitation"}
+                      {issued
+                        ? issued.emailSent
+                          ? "Invitation sent"
+                          : "Invitation created"
+                        : editing
+                          ? "Access"
+                          : "Invitation"}
                     </p>
                     <h2
                       id={titleId}
                       className="mt-1 truncate text-xl font-semibold tracking-tight text-neutral-950"
                     >
                       {issued
-                        ? "Check the inbox"
+                        ? issued.emailSent
+                          ? `${issued.email} is on the way`
+                          : "Share the invitation yourself"
                         : editing
                           ? "Update quotas"
                           : "Invite a user"}
                     </h2>
                     <p className="mt-1 text-sm text-neutral-500">
                       {issued
-                        ? `${issued.email} receives a link to /auth/accept-invite.`
+                        ? issued.emailSent
+                          ? `Sent with ${issued.sentWith ?? "your sending tool"}.`
+                          : `The email to ${issued.email} could not be delivered.`
                         : "Domain cap, send quotas, and API key access."}
                     </p>
                   </div>
@@ -493,12 +527,50 @@ export default function UsersPanel() {
 
                 {issued ? (
                   <div className="space-y-5 p-6">
-                    <p className="text-sm leading-relaxed text-neutral-600">
-                      The activation email is on its way to {issued.email}. The link expires with the
-                      delay you chose and works once.
+                    {issued.emailSent ? (
+                      <p className="text-sm leading-relaxed text-neutral-600">
+                        {issued.email} gets an email with a button to accept the
+                        invitation and a code to type on the sign-in page. They
+                        choose a password and land in the console. Nothing else
+                        to do on your side.
+                      </p>
+                    ) : (
+                      <div className="rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900">
+                        <p className="font-medium">
+                          None of your sending tools could deliver the email.
+                        </p>
+                        <p className="mt-1">
+                          The seat is reserved. Send the code or the link below
+                          to {issued.email} yourself, for example over Slack.
+                        </p>
+                      </div>
+                    )}
+                    {issued.emailError ? (
+                      <p className="text-xs leading-relaxed break-words text-neutral-500">
+                        {issued.emailSent
+                          ? "Fallback used after: "
+                          : "Details: "}
+                        {issued.emailError}
+                      </p>
+                    ) : null}
+                    <CopyRow
+                      label="Invitation code"
+                      value={issued.code}
+                      large
+                    />
+                    <CopyRow label="Activation link" value={issued.link} />
+                    <p className="text-xs leading-relaxed text-neutral-500">
+                      Works once. Expires on{" "}
+                      {new Date(issued.expiresAt).toLocaleString()}. The code
+                      goes in "Have an invitation code?" on the console sign-in
+                      page.
                     </p>
                     <div className="flex justify-end">
-                      <button type="button" className={BTN_PRIMARY} onClick={closeModal}>
+                      <button
+                        type="button"
+                        className={BTN_PRIMARY}
+                        onClick={closeModal}
+                      >
                         Done
                       </button>
                     </div>
@@ -591,7 +663,11 @@ export default function UsersPanel() {
                             {PROVIDER_OPTIONS.map((tool) => {
                               const ready = connectedTools.includes(tool.id);
                               return (
-                                <option key={tool.id} value={tool.id} disabled={!ready}>
+                                <option
+                                  key={tool.id}
+                                  value={tool.id}
+                                  disabled={!ready}
+                                >
                                   {tool.label}
                                   {ready ? "" : " (not connected)"}
                                 </option>
@@ -599,8 +675,8 @@ export default function UsersPanel() {
                             })}
                           </select>
                           <span className="mt-2 block text-xs text-neutral-500">
-                            Delivery tool for the activation email. The platform from-domain
-                            must be verified on the chosen tool.
+                            Delivery tool for the activation email. The platform
+                            from-domain must be verified on the chosen tool.
                           </span>
                         </label>
                       ) : null}
@@ -660,13 +736,17 @@ export default function UsersPanel() {
                               disabled={Boolean(editing)}
                               onChange={(event) => {
                                 if (event.target.value === "other") {
-                                  setForm((current) => ({ ...current, expiresOther: true }));
+                                  setForm((current) => ({
+                                    ...current,
+                                    expiresOther: true,
+                                  }));
                                   return;
                                 }
                                 setForm((current) => ({
                                   ...current,
                                   expiresOther: false,
-                                  expiresInHours: Number(event.target.value) as 24 | 48,
+                                  expiresInHours: Number(event.target.value) as
+                                    24 | 48,
                                 }));
                               }}
                               className={`${SELECT} disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500`}
@@ -737,7 +817,9 @@ export default function UsersPanel() {
                         type="button"
                         className={BTN_PRIMARY}
                         disabled={saving}
-                        onClick={() => void (editing ? saveEdit() : sendInvite())}
+                        onClick={() =>
+                          void (editing ? saveEdit() : sendInvite())
+                        }
                       >
                         {saving ? "Saving…" : editing ? "Save" : "Send invite"}
                       </button>
@@ -755,7 +837,11 @@ export default function UsersPanel() {
             <div
               ref={menuRef}
               role="menu"
-              style={{ top: menuPos.top, left: menuPos.left, width: MENU_WIDTH }}
+              style={{
+                top: menuPos.top,
+                left: menuPos.left,
+                width: MENU_WIDTH,
+              }}
               className={`fixed z-50 overflow-hidden rounded-sm py-1 ${PORTAL_SURFACE}`}
             >
               <button
@@ -852,5 +938,57 @@ function StatusBadge({ status }: { status: UserStatus }) {
     >
       {status}
     </span>
+  );
+}
+
+function CopyRow({
+  label,
+  value,
+  large = false,
+}: {
+  label: string;
+  value: string;
+  large?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div>
+      <p className="mb-2 font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
+        {label}
+      </p>
+      <div className="flex items-center gap-2">
+        <code
+          title={value}
+          className={`min-w-0 flex-1 truncate rounded-sm border border-neutral-200 bg-neutral-50 px-3 py-2.5 font-mono text-neutral-900 ${
+            large ? "text-base font-semibold tracking-wider" : "text-xs"
+          }`}
+        >
+          {value}
+        </code>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          aria-label={`Copy ${label.toLowerCase()}`}
+          className="inline-flex size-10 shrink-0 items-center justify-center rounded-sm border border-neutral-200 text-neutral-500 transition-colors hover:border-[#0A4BD6]/30 hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
+        >
+          {copied ? (
+            <Check className="size-4" aria-hidden="true" />
+          ) : (
+            <Copy className="size-4" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+    </div>
   );
 }

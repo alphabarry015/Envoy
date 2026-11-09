@@ -122,7 +122,11 @@ class TokenResponse(BaseModel):
 class InviteCreatedResponse(BaseModel):
     email: EmailStr
     invite_token: str
+    invite_link: str
     expires_at: datetime
+    email_sent: bool
+    sent_with: str | None = None
+    email_error: str | None = None
 
 
 class ApiKeyCreate(BaseModel):

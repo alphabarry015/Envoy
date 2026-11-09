@@ -1,7 +1,7 @@
 import { KeyRound } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useState, type FormEvent } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import SiteHeader from "../components/SiteHeader";
 import FiberField from "../components/ui/FiberField";
@@ -17,10 +17,12 @@ const LABEL =
 export default function LoginPage() {
   const navigate = useNavigate();
   const existing = readSession();
+  const [params] = useSearchParams();
+  const codeFromUrl = params.get("code")?.trim() ?? "";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteToken, setInviteToken] = useState("");
+  const [inviteOpen, setInviteOpen] = useState(Boolean(codeFromUrl));
+  const [inviteToken, setInviteToken] = useState(codeFromUrl);
   const [invitePassword, setInvitePassword] = useState("");
   const [invitePasswordConfirm, setInvitePasswordConfirm] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -136,9 +138,7 @@ export default function LoginPage() {
                 className="inline-flex items-center gap-2 text-sm text-white/80 transition-colors hover:text-white"
               >
                 <KeyRound className="size-3.5" aria-hidden="true" />
-                {inviteOpen
-                  ? "Hide invite activation"
-                  : "Have an invite token? Activate account"}
+                {inviteOpen ? "Hide" : "Have an invitation code?"}
               </button>
 
               <AnimatePresence>
@@ -150,13 +150,19 @@ export default function LoginPage() {
                     onSubmit={onActivate}
                     className="mt-4 space-y-3 overflow-hidden"
                   >
+                    <p className="text-sm leading-relaxed text-white/70">
+                      Enter the code from your invitation email, then choose your password.
+                    </p>
                     <label className="block">
-                      <span className={LABEL}>Invite token</span>
+                      <span className={LABEL}>Invitation code</span>
                       <input
                         value={inviteToken}
                         onChange={(event) => setInviteToken(event.target.value)}
-                        placeholder="Invite token"
-                        className={INPUT}
+                        placeholder="XXXX-XXXX-XXXX-XXXX"
+                        autoCapitalize="characters"
+                        autoComplete="one-time-code"
+                        spellCheck={false}
+                        className={`${INPUT} font-mono tracking-wider uppercase`}
                         required
                       />
                     </label>

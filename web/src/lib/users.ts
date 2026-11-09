@@ -52,7 +52,21 @@ type ApiUser = {
 type InviteResponse = {
   email: string;
   invite_token: string;
+  invite_link: string;
   expires_at: string;
+  email_sent: boolean;
+  sent_with: string | null;
+  email_error: string | null;
+};
+
+export type IssuedInvite = {
+  email: string;
+  code: string;
+  link: string;
+  expiresAt: string;
+  emailSent: boolean;
+  sentWith: string | null;
+  emailError: string | null;
 };
 
 function apiRole(role: UserRole): "admin" | "user" {
@@ -96,7 +110,7 @@ export async function fetchUsers(): Promise<ConsoleUser[]> {
   return rows.map(toConsoleUser);
 }
 
-export async function sendInvite(input: InviteDraft): Promise<{ email: string }> {
+export async function sendInvite(input: InviteDraft): Promise<IssuedInvite> {
   const response = await fetch(`${apiUrl()}/api/v1/auth/invite`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeader() },
@@ -114,7 +128,15 @@ export async function sendInvite(input: InviteDraft): Promise<{ email: string }>
   });
   if (!response.ok) throw new Error(await readApiError(response, "Could not send the invite."));
   const body = (await response.json()) as InviteResponse;
-  return { email: body.email };
+  return {
+    email: body.email,
+    code: body.invite_token,
+    link: body.invite_link,
+    expiresAt: body.expires_at,
+    emailSent: body.email_sent,
+    sentWith: body.sent_with,
+    emailError: body.email_error,
+  };
 }
 
 export async function updateUser(user: ConsoleUser, draft: InviteDraft): Promise<void> {

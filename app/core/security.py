@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -48,8 +49,22 @@ def verify_api_key(raw_key: str, hashed_key: str) -> bool:
     return hmac.compare_digest(digest, hashed_key)
 
 
+INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789"
+_INVITE_CODE = re.compile(r"[A-Z0-9]{16}")
+
+
 def generate_invite_token() -> str:
-    return secrets.token_urlsafe(48)
+    """16 characters (~78 bits) shown as XXXX-XXXX-XXXX-XXXX so people can type it."""
+    raw = "".join(secrets.choice(INVITE_ALPHABET) for _ in range(16))
+    return "-".join(raw[i : i + 4] for i in range(0, 16, 4))
+
+
+def normalize_invite_token(token: str) -> str:
+    """Accepts a code typed with spaces, lowercase or no dashes; older long tokens pass through."""
+    compact = re.sub(r"[\s-]", "", token).upper()
+    if _INVITE_CODE.fullmatch(compact):
+        return "-".join(compact[i : i + 4] for i in range(0, 16, 4))
+    return token.strip()
 
 
 def create_access_token(

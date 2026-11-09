@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import logging
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from uuid import UUID
@@ -16,6 +17,7 @@ from app.core.security import (
     create_access_token,
     generate_invite_token,
     hash_password,
+    normalize_invite_token,
     verify_password,
 )
 from app.models.suppression import Suppression
@@ -34,6 +36,8 @@ from app.schemas.user import (
     UserUpdateRequest,
 )
 
+logger = logging.getLogger("envoy.auth")
+
 _PROVIDER_LABELS = {
     "ses": "Amazon SES",
     "resend": "Resend",
@@ -50,7 +54,7 @@ class AuthError(Exception):
 
 
 def _hash_invite(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return hashlib.sha256(normalize_invite_token(token).encode("utf-8")).hexdigest()
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -159,6 +163,7 @@ async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest)
     link = _activation_link(raw_token)
     subject, text_body, html_body = render_invite(
         link=link,
+        code=raw_token,
         expires=expires,
         recipient=user.email,
         inviter=actor.display_name or actor.email,
@@ -173,26 +178,48 @@ async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest)
             400,
             f"{label} is not connected. Configure its API credentials before sending invites with it.",
         )
-    try:
-        await EmailRouter([chosen]).send(
-            from_address=f"Envoy <{settings.platform_mail_from}>",
-            to_addresses=[user.email],
-            subject=subject,
-            html=html_body,
-            text=text_body,
-            reply_to=[actor.invite_reply_to] if actor.invite_reply_to else None,
-        )
-    except EmailProviderError as exc:
-        raise AuthError(
-            502,
-            f"The invitation was saved, but {label} could not send the activation email.",
-        ) from exc
+    # The chosen tool goes first; the other connected tools only step in if it refuses.
+    order = [tool] + [name for name in providers if name != tool and providers[name].is_configured()]
+    sent_with: str | None = None
+    failures: list[str] = []
+    for name in order:
+        try:
+            await EmailRouter([providers[name]]).send(
+                from_address=f"Envoy <{settings.platform_mail_from}>",
+                to_addresses=[user.email],
+                subject=subject,
+                html=html_body,
+                text=text_body,
+                reply_to=[actor.invite_reply_to] if actor.invite_reply_to else None,
+            )
+        except EmailProviderError as exc:
+            failures.append(f"{_PROVIDER_LABELS.get(name, name)}: {_short_reason(exc)}")
+            logger.warning("invite_email_failed provider=%s error=%s", name, exc)
+            continue
+        sent_with = _PROVIDER_LABELS.get(name, name)
+        break
     await realtime_publish(
         actor.id,
         "users.changed",
         {"email": user.email, "reason": "invite_sent", "provider": tool},
     )
-    return InviteCreatedResponse(email=user.email, invite_token=raw_token, expires_at=expires)
+    return InviteCreatedResponse(
+        email=user.email,
+        invite_token=raw_token,
+        invite_link=link,
+        expires_at=expires,
+        email_sent=sent_with is not None,
+        sent_with=sent_with,
+        email_error=None if sent_with and not failures else ("; ".join(failures) or None),
+    )
+
+
+def _short_reason(exc: EmailProviderError) -> str:
+    text = str(exc)
+    prefix = f"{exc.provider}: "
+    if text.startswith(prefix):
+        text = text[len(prefix):]
+    return text[:180]
 
 
 async def accept_invite(db: AsyncSession, payload: AcceptInviteRequest) -> User:

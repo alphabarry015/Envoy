@@ -15,7 +15,8 @@ const LABEL =
 export default function AcceptInvitePage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const token = params.get("token")?.trim() ?? "";
+  const tokenFromUrl = params.get("token")?.trim() ?? "";
+  const [token, setToken] = useState(tokenFromUrl);
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -33,7 +34,9 @@ export default function AcceptInvitePage() {
       await acceptInvite(token, password, passwordConfirm);
       navigate("/console/overview", { replace: true });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Invite activation failed.");
+      setMessage(
+        error instanceof Error ? error.message : "Invite activation failed.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -45,50 +48,71 @@ export default function AcceptInvitePage() {
       <SiteHeader variant="overlay" />
       <div className="relative z-10 mx-auto flex w-full max-w-lg flex-1 items-center px-4 py-8 sm:px-5">
         <div className="w-full rounded-sm border border-white/15 bg-[#0839B0]/80 p-6 md:p-8">
-          <p className="font-mono text-[11px] tracking-widest text-white/45 uppercase">Activation</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight">Set your password.</h1>
-          <p className="mt-3 text-sm leading-relaxed text-white/70">
-            This invitation link works once. Choose a password of at least 10 characters.
+          <p className="font-mono text-[11px] tracking-widest text-white/45 uppercase">
+            Activation
           </p>
-          {token ? (
-            <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight">
+            Set your password.
+          </h1>
+          <p className="mt-3 text-sm leading-relaxed text-white/70">
+            Choose a password of at least 10 characters. Your invitation works
+            once.
+          </p>
+          <form onSubmit={onSubmit} className="mt-6 space-y-4">
+            {tokenFromUrl ? null : (
               <label className="block">
-                <span className={LABEL}>Password</span>
+                <span className={LABEL}>Invitation code</span>
                 <input
-                  type="password"
                   required
-                  minLength={10}
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className={INPUT}
+                  value={token}
+                  onChange={(event) => setToken(event.target.value)}
+                  placeholder="XXXX-XXXX-XXXX-XXXX"
+                  autoCapitalize="characters"
+                  autoComplete="one-time-code"
+                  spellCheck={false}
+                  className={`${INPUT} font-mono tracking-wider uppercase`}
                 />
               </label>
-              <label className="block">
-                <span className={LABEL}>Confirm password</span>
-                <input
-                  type="password"
-                  required
-                  minLength={10}
-                  autoComplete="new-password"
-                  value={passwordConfirm}
-                  onChange={(event) => setPasswordConfirm(event.target.value)}
-                  className={INPUT}
-                />
-              </label>
-              {message ? <p className="text-sm text-[#9ec4ff]">{message}</p> : null}
-              <SplitPillButton
-                label={submitting ? "Activating" : "Activate account"}
-                type="submit"
-                className="w-full justify-center"
+            )}
+            <label className="block">
+              <span className={LABEL}>Password</span>
+              <input
+                type="password"
+                required
+                minLength={10}
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className={INPUT}
               />
-            </form>
-          ) : (
-            <p className="mt-6 text-sm text-[#9ec4ff]">This activation link is missing its token.</p>
-          )}
+            </label>
+            <label className="block">
+              <span className={LABEL}>Confirm password</span>
+              <input
+                type="password"
+                required
+                minLength={10}
+                autoComplete="new-password"
+                value={passwordConfirm}
+                onChange={(event) => setPasswordConfirm(event.target.value)}
+                className={INPUT}
+              />
+            </label>
+            {message ? (
+              <p className="text-sm text-[#9ec4ff]">{message}</p>
+            ) : null}
+            <SplitPillButton
+              label={submitting ? "Activating" : "Activate account"}
+              type="submit"
+              className="w-full justify-center"
+            />
+          </form>
           <p className="mt-6 text-sm text-white/55">
             Already active?{" "}
-            <Link to="/console/login" className="font-medium text-white underline-offset-4 hover:underline">
+            <Link
+              to="/console/login"
+              className="font-medium text-white underline-offset-4 hover:underline"
+            >
               Sign in
             </Link>
           </p>
