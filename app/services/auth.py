@@ -23,10 +23,9 @@ from app.core.security import (
 from app.models.suppression import Suppression
 from app.models.user import User, UserRole, UserStatus
 from app.sql_files import read_sql
-from app.providers import EmailProviderError
 from app.providers.factory import build_provider_map
-from app.providers.router import EmailRouter
 from app.services.invite_email import render_invite
+from app.services.platform_mail import PROVIDER_LABELS, deliver
 from app.services.realtime import publish as realtime_publish
 from app.schemas.user import (
     AcceptInviteRequest,
@@ -38,12 +37,7 @@ from app.schemas.user import (
 
 logger = logging.getLogger("envoy.auth")
 
-_PROVIDER_LABELS = {
-    "ses": "Amazon SES",
-    "resend": "Resend",
-    "brevo": "Brevo",
-    "mailtrap": "Mailtrap",
-}
+_PROVIDER_LABELS = PROVIDER_LABELS
 
 
 class AuthError(Exception):
@@ -178,26 +172,14 @@ async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest)
             400,
             f"{label} is not connected. Configure its API credentials before sending invites with it.",
         )
-    # The chosen tool goes first; the other connected tools only step in if it refuses.
-    order = [tool] + [name for name in providers if name != tool and providers[name].is_configured()]
-    sent_with: str | None = None
-    failures: list[str] = []
-    for name in order:
-        try:
-            await EmailRouter([providers[name]]).send(
-                from_address=f"Envoy <{settings.platform_mail_from}>",
-                to_addresses=[user.email],
-                subject=subject,
-                html=html_body,
-                text=text_body,
-                reply_to=[actor.invite_reply_to] if actor.invite_reply_to else None,
-            )
-        except EmailProviderError as exc:
-            failures.append(f"{_PROVIDER_LABELS.get(name, name)}: {_short_reason(exc)}")
-            logger.warning("invite_email_failed provider=%s error=%s", name, exc)
-            continue
-        sent_with = _PROVIDER_LABELS.get(name, name)
-        break
+    delivery = await deliver(
+        to=user.email,
+        subject=subject,
+        html=html_body,
+        text=text_body,
+        reply_to=actor.invite_reply_to,
+        prefer=tool,
+    )
     await realtime_publish(
         actor.id,
         "users.changed",
@@ -208,18 +190,10 @@ async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest)
         invite_token=raw_token,
         invite_link=link,
         expires_at=expires,
-        email_sent=sent_with is not None,
-        sent_with=sent_with,
-        email_error=None if sent_with and not failures else ("; ".join(failures) or None),
+        email_sent=delivery.sent,
+        sent_with=delivery.sent_with,
+        email_error=delivery.error,
     )
-
-
-def _short_reason(exc: EmailProviderError) -> str:
-    text = str(exc)
-    prefix = f"{exc.provider}: "
-    if text.startswith(prefix):
-        text = text[len(prefix):]
-    return text[:180]
 
 
 async def accept_invite(db: AsyncSession, payload: AcceptInviteRequest) -> User:

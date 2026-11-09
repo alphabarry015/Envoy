@@ -127,7 +127,11 @@ export async function sendInvite(input: InviteDraft): Promise<IssuedInvite> {
     }),
   });
   if (!response.ok) throw new Error(await readApiError(response, "Could not send the invite."));
-  const body = (await response.json()) as InviteResponse;
+  return toIssuedInvite(await response.json());
+}
+
+export function toIssuedInvite(payload: unknown): IssuedInvite {
+  const body = payload as InviteResponse;
   return {
     email: body.email,
     code: body.invite_token,

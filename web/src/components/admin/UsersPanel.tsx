@@ -1,12 +1,19 @@
 import { Check, Copy, MoreVertical, UserPlus, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useSearchParams } from "react-router-dom";
 
 import {
   DAILY_QUOTA_OPTIONS,
   MONTHLY_QUOTA_OPTIONS,
   formatQuota,
 } from "../../lib/apiKeys";
+import {
+  type AccessRequestItem,
+  acceptAccessRequest,
+  declineAccessRequest,
+  fetchAccessRequests,
+} from "../../lib/accessRequests";
 import { readSession } from "../../lib/auth";
 import { accountInitials, accountName } from "../../lib/account";
 import {
@@ -19,6 +26,7 @@ import { PROVIDER_OPTIONS, type ProviderId } from "../../lib/providerOptions";
 import { fetchProviders } from "../../lib/providers";
 import { onRealtime } from "../../lib/realtime";
 import { PageLoading } from "../ui/ScanLoading";
+import AccessRequestsSection from "./AccessRequestsSection";
 import {
   type ConsoleUser,
   type IssuedInvite,
@@ -119,6 +127,13 @@ export default function UsersPanel() {
   const [form, setForm] = useState<FormState>(() => emptyForm("ses"));
   const [error, setError] = useState<string | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [requests, setRequests] = useState<AccessRequestItem[]>([]);
+  const [requestsError, setRequestsError] = useState<string | null>(null);
+  const [fromRequest, setFromRequest] = useState<AccessRequestItem | null>(
+    null,
+  );
+  const [searchParams] = useSearchParams();
+  const highlightRequestId = searchParams.get("request");
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(
     null,
   );
@@ -128,8 +143,22 @@ export default function UsersPanel() {
   const menuUser = seats.find((user) => user.id === menuId) ?? null;
   const pendingCount = seats.filter((user) => user.status === "pending").length;
 
+  async function reloadRequests() {
+    try {
+      setRequests(await fetchAccessRequests());
+      setRequestsError(null);
+    } catch (cause: unknown) {
+      setRequestsError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not load access requests.",
+      );
+    }
+  }
+
   async function reload() {
     setLoadError(null);
+    void reloadRequests();
     try {
       const [nextUsers, providers] = await Promise.all([
         fetchUsers(),
@@ -158,9 +187,16 @@ export default function UsersPanel() {
 
   useEffect(() => {
     void reload();
-    return onRealtime(["users.changed"], () => {
+    const offUsers = onRealtime(["users.changed"], () => {
       void reload();
     });
+    const offRequests = onRealtime(["access_requests.changed"], () => {
+      void reloadRequests();
+    });
+    return () => {
+      offUsers();
+      offRequests();
+    };
   }, []);
 
   function closeMenu() {
@@ -187,8 +223,37 @@ export default function UsersPanel() {
     setModalOpen(false);
     setEditingId(null);
     setIssued(null);
+    setFromRequest(null);
     setError(null);
     setForm(emptyForm(defaultProvider));
+  }
+
+  function openFromRequest(item: AccessRequestItem) {
+    closeMenu();
+    setForm({
+      ...emptyForm(defaultProvider),
+      name: item.fullName,
+      email: item.email,
+    });
+    setEditingId(null);
+    setIssued(null);
+    setError(null);
+    setFromRequest(item);
+    setModalOpen(true);
+  }
+
+  async function declineRequest(item: AccessRequestItem, notify: boolean) {
+    setRequestsError(null);
+    try {
+      await declineAccessRequest(item.id, notify);
+      await reloadRequests();
+    } catch (cause: unknown) {
+      setRequestsError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not decline this request.",
+      );
+    }
   }
 
   function openInvite() {
@@ -274,13 +339,16 @@ export default function UsersPanel() {
     }
     setSaving(true);
     try {
-      const issuedInvite = await issueInvite({
+      const draft = {
         ...form,
         name,
         email,
         provider: form.provider,
         expiresInHours: form.expiresOther ? days * 24 : form.expiresInHours,
-      });
+      };
+      const issuedInvite = fromRequest
+        ? await acceptAccessRequest(fromRequest.id, draft)
+        : await issueInvite(draft);
       await reload();
       setIssued(issuedInvite);
     } catch (cause: unknown) {
@@ -360,6 +428,14 @@ export default function UsersPanel() {
           Invite user
         </button>
       </div>
+
+      <AccessRequestsSection
+        requests={requests}
+        highlightId={highlightRequestId}
+        error={requestsError}
+        onAccept={openFromRequest}
+        onDecline={declineRequest}
+      />
 
       <div className="overflow-hidden rounded-sm border border-neutral-200 bg-neutral-50">
         <div className="border-b border-neutral-200 px-5 py-3">
@@ -493,7 +569,9 @@ export default function UsersPanel() {
                           : "Invitation created"
                         : editing
                           ? "Access"
-                          : "Invitation"}
+                          : fromRequest
+                            ? "Access request"
+                            : "Invitation"}
                     </p>
                     <h2
                       id={titleId}
@@ -505,14 +583,18 @@ export default function UsersPanel() {
                           : "Share the invitation yourself"
                         : editing
                           ? "Update quotas"
-                          : "Invite a user"}
+                          : fromRequest
+                            ? `Accept ${fromRequest.fullName}`
+                            : "Invite a user"}
                     </h2>
                     <p className="mt-1 text-sm text-neutral-500">
                       {issued
                         ? issued.emailSent
                           ? `Sent with ${issued.sentWith ?? "your sending tool"}.`
                           : `The email to ${issued.email} could not be delivered.`
-                        : "Domain cap, send quotas, and API key access."}
+                        : fromRequest
+                          ? "Pick their access. Envoy then sends the invitation."
+                          : "Domain cap, send quotas, and API key access."}
                     </p>
                   </div>
                   <button
@@ -603,7 +685,7 @@ export default function UsersPanel() {
                         <input
                           ref={emailRef}
                           value={form.email}
-                          disabled={Boolean(editing)}
+                          disabled={Boolean(editing) || Boolean(fromRequest)}
                           onChange={(event) =>
                             setForm((current) => ({
                               ...current,
@@ -821,7 +903,13 @@ export default function UsersPanel() {
                           void (editing ? saveEdit() : sendInvite())
                         }
                       >
-                        {saving ? "Saving…" : editing ? "Save" : "Send invite"}
+                        {saving
+                          ? "Saving…"
+                          : editing
+                            ? "Save"
+                            : fromRequest
+                              ? "Accept and send invite"
+                              : "Send invite"}
                       </button>
                     </div>
                   </>
