@@ -16,14 +16,21 @@ def render_invite(
     recipient: str,
     inviter: str | None,
     site_url: str,
+    invitee: str | None = None,
 ) -> tuple[str, str, str]:
     """Returns (subject, text, html)."""
     when = expires.strftime("%B %d, %Y at %H:%M UTC")
-    who = one_line(inviter) or "An Envoy administrator"
+    # Only a display name is shown: the inviter's email address never appears in the email.
+    name = one_line(inviter)
+    who = name if name and "@" not in name else "The Envoy team"
+    invitee_name = one_line(invitee)
+    first = invitee_name.split(" ")[0] if invitee_name and "@" not in invitee_name else ""
+    greeting = f"Hi {first}," if first else "Hi,"
     subject = f"{who} invited you to Envoy"
     login_url = f"{site_url}/console/login"
 
     text = (
+        f"{greeting}\n\n"
         f"{who} invited you to join their workspace on Envoy.\n\n"
         "Envoy is where your team sends transactional email from its own domains: "
         "password resets, receipts, alerts.\n\n"
@@ -42,6 +49,7 @@ def render_invite(
     safe_link = escape(link, quote=True)
     body = "\n".join(
         [
+            paragraph(escape(greeting)),
             paragraph(
                 f'<strong style="color:{INK};font-weight:600">{escape(who)}</strong> invited you to join their workspace. '
                 "Envoy is where your team sends transactional email from its own domains: password resets, receipts, alerts."

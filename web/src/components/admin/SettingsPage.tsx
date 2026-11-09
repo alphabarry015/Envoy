@@ -8,6 +8,7 @@ import { PageLoading } from "../ui/ScanLoading";
 
 type Account = {
   email: string;
+  display_name?: string | null;
   role?: string;
   invite_reply_to?: string | null;
 };
@@ -58,6 +59,9 @@ export default function SettingsPage() {
   const [inviteReplyTo, setInviteReplyTo] = useState("");
   const [inviteSaving, setInviteSaving] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameMessage, setNameMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +75,7 @@ export default function SettingsPage() {
         if (!cancelled) {
           setAccount(body);
           setInviteReplyTo(body.invite_reply_to ?? "");
+          setDisplayName(body.display_name ?? "");
         }
       })
       .catch((cause: unknown) => {
@@ -110,6 +115,31 @@ export default function SettingsPage() {
       setFormError(cause instanceof Error ? cause.message : "Could not update the password.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function submitProfile(event: FormEvent) {
+    event.preventDefault();
+    setNameSaving(true);
+    setNameMessage(null);
+    try {
+      const response = await fetch(`${apiBase()}/api/v1/auth/me/profile`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify({ display_name: displayName }),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      const body = (await response.json()) as Account;
+      setAccount(body);
+      setDisplayName(body.display_name ?? "");
+      setNameMessage({ ok: true, text: "Name saved." });
+    } catch (cause: unknown) {
+      setNameMessage({
+        ok: false,
+        text: cause instanceof Error ? cause.message : "Could not save your name.",
+      });
+    } finally {
+      setNameSaving(false);
     }
   }
 
@@ -166,6 +196,35 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
+      <section className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-7">
+        <p className={KICKER}>Profile</p>
+        <p className="mt-3 text-sm text-neutral-500">
+          Your name appears in the invitations you send. Your email address is never shown.
+        </p>
+        <form className="mt-5 space-y-3" onSubmit={submitProfile}>
+          <label className="block">
+            <span className="mb-1.5 block text-xs text-neutral-500">Your name</span>
+            <input
+              required
+              maxLength={120}
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              placeholder="Ada Lovelace"
+              autoComplete="name"
+              className={FIELD_COMPACT}
+            />
+          </label>
+          {nameMessage ? (
+            <p className={`text-sm ${nameMessage.ok ? "text-emerald-700" : "text-red-600"}`}>
+              {nameMessage.text}
+            </p>
+          ) : null}
+          <button type="submit" className={BTN_PRIMARY} disabled={nameSaving}>
+            {nameSaving ? "Saving…" : "Save name"}
+          </button>
+        </form>
+      </section>
+
       <section className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-7">
         <p className={KICKER}>Password</p>
         <p className="mt-3 text-sm text-neutral-500">

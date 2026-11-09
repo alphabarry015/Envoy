@@ -43,7 +43,7 @@ def test_invite_email_layout_and_escaping() -> None:
         code="ABCD-EFGH-JKMN-PQRS",
         expires=datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc),
         recipient="new@acme.io",
-        inviter="<script>Ops</script>\r\nBcc: x@evil.test",
+        inviter="<script>Ops</script>\r\nBcc: attacker",
         site_url="https://envoy.example.com",
     )
     assert "\n" not in subject and subject.endswith("invited you to Envoy")
@@ -54,6 +54,22 @@ def test_invite_email_layout_and_escaping() -> None:
     assert "accept-invite?token=a&b" in text
     assert "ABCD-EFGH-JKMN-PQRS" in html and "ABCD-EFGH-JKMN-PQRS" in text
     assert "https://envoy.example.com/console/login" in html
+
+
+def test_invite_shows_names_never_the_inviter_email() -> None:
+    common = {
+        "link": "https://e.x/a?token=t",
+        "code": "ABCD-EFGH-JKMN-PQRS",
+        "expires": datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc),
+        "recipient": "ada@acme.io",
+        "site_url": "https://e.x",
+    }
+    subject, text, html = render_invite(inviter="Alpha Barry", invitee="Ada Lovelace", **common)
+    assert subject == "Alpha Barry invited you to Envoy"
+    assert "Hi Ada," in html and "Hi Ada," in text
+    subject, text, html = render_invite(inviter="admin@acme.io", invitee=None, **common)
+    assert "admin@acme.io" not in subject + text + html
+    assert subject == "The Envoy team invited you to Envoy"
 
 
 def test_invite_codes_are_typeable() -> None:

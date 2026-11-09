@@ -12,6 +12,7 @@ from app.schemas.user import (
     AcceptInviteRequest,
     InviteCreatedResponse,
     InviteSettingsUpdate,
+    ProfileUpdate,
     InviteUserRequest,
     LoginRequest,
     PasswordChangeRequest,
@@ -69,6 +70,18 @@ async def login(
 
 @router.get("/me", response_model=UserResponse, summary="Session courante")
 async def me(user: User = Depends(get_current_user)) -> User:
+    return user
+
+
+@router.put("/me/profile", response_model=UserResponse, summary="Nom affiché")
+async def update_profile(
+    payload: ProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> User:
+    user.display_name = payload.display_name
+    await db.commit()
+    await db.refresh(user)
     return user
 
 

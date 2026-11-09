@@ -97,6 +97,22 @@ class UserResponse(BaseModel):
     updated_at: datetime
 
 
+class ProfileUpdate(BaseModel):
+    """Name shown to others, for example in invitation emails."""
+
+    display_name: str = Field(..., min_length=1, max_length=120)
+
+    @field_validator("display_name")
+    @classmethod
+    def single_line(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Name is required.")
+        if "@" in cleaned or any(char in cleaned for char in "<>\""):
+            raise ValueError("Use a name, not an email address.")
+        return cleaned
+
+
 class InviteSettingsUpdate(BaseModel):
     """Reply-To of the invitation emails sent by this admin. None = no Reply-To."""
 

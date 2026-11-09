@@ -160,7 +160,8 @@ async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest)
         code=raw_token,
         expires=expires,
         recipient=user.email,
-        inviter=actor.display_name or actor.email,
+        inviter=actor.display_name,
+        invitee=user.display_name,
         site_url=settings.public_app_url.rstrip("/"),
     )
     tool = payload.provider.strip().lower()
