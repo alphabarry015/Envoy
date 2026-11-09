@@ -4,7 +4,9 @@ import re
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.models.domain import DkimStatus, DomainStatus
 
@@ -77,6 +79,42 @@ class DomainProvidersUpdate(BaseModel):
         return _normalize_providers(value)
 
 
+LOCAL_PART_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$")
+
+
+class DomainSenderUpdate(BaseModel):
+    from_local_part: str = Field(default="noreply", min_length=1, max_length=64)
+    from_name: str | None = Field(default=None, max_length=120)
+    reply_mode: Literal["none", "address"] = "none"
+    reply_to: EmailStr | None = None
+
+    @field_validator("from_local_part")
+    @classmethod
+    def valid_local_part(cls, value: str) -> str:
+        local = value.strip().lower()
+        if not LOCAL_PART_PATTERN.fullmatch(local) or ".." in local:
+            raise ValueError("Use letters, numbers, dots, dashes, + or _ (e.g. noreply, hello).")
+        return local
+
+    @field_validator("from_name")
+    @classmethod
+    def clean_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split())
+        if re.search(r'[<>"\\]', cleaned):
+            raise ValueError("The sender name cannot contain < > \" or \\.")
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def reply_address_required(self) -> DomainSenderUpdate:
+        if self.reply_mode == "address" and not self.reply_to:
+            raise ValueError("Enter the address that should receive replies.")
+        if self.reply_mode == "none":
+            self.reply_to = None
+        return self
+
+
 class DomainResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -94,6 +132,10 @@ class DomainResponse(BaseModel):
     region: str = "us-east-2"
     nameservers: list[str] = Field(default_factory=list)
     mail_from: str = ""
+    from_local_part: str = "noreply"
+    from_name: str | None = None
+    reply_to: str | None = None
+    sender_configured: bool = False
     tool_warnings: list[str] = Field(
         default_factory=list,
         description="Outils mal liés / DNS indisponibles après sync",

@@ -8,6 +8,8 @@ import { PageLoading } from "../ui/ScanLoading";
 
 type Account = {
   email: string;
+  role?: string;
+  invite_reply_to?: string | null;
 };
 
 type PasswordForm = {
@@ -53,6 +55,9 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [inviteReplyTo, setInviteReplyTo] = useState("");
+  const [inviteSaving, setInviteSaving] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,7 +68,10 @@ export default function SettingsPage() {
         return (await response.json()) as Account;
       })
       .then((body) => {
-        if (!cancelled) setAccount(body);
+        if (!cancelled) {
+          setAccount(body);
+          setInviteReplyTo(body.invite_reply_to ?? "");
+        }
       })
       .catch((cause: unknown) => {
         if (!cancelled) setLoadError(cause instanceof Error ? cause.message : "Could not load settings.");
@@ -102,6 +110,36 @@ export default function SettingsPage() {
       setFormError(cause instanceof Error ? cause.message : "Could not update the password.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function submitInviteSettings(event: FormEvent) {
+    event.preventDefault();
+    setInviteSaving(true);
+    setInviteMessage(null);
+    try {
+      const response = await fetch(`${apiBase()}/api/v1/auth/me/invite-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify({ invite_reply_to: inviteReplyTo.trim() || null }),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      const body = (await response.json()) as Account;
+      setAccount(body);
+      setInviteReplyTo(body.invite_reply_to ?? "");
+      setInviteMessage({
+        ok: true,
+        text: body.invite_reply_to
+          ? `Replies to invitations now go to ${body.invite_reply_to}.`
+          : "Invitations are sent without a reply address.",
+      });
+    } catch (cause: unknown) {
+      setInviteMessage({
+        ok: false,
+        text: cause instanceof Error ? cause.message : "Could not save the reply address.",
+      });
+    } finally {
+      setInviteSaving(false);
     }
   }
 
@@ -179,6 +217,37 @@ export default function SettingsPage() {
           </button>
         </form>
       </section>
+
+      {account.role === "admin" ? (
+        <section className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-7">
+          <p className={KICKER}>Invitation emails</p>
+          <p className="mt-3 text-sm text-neutral-500">
+            When someone answers an invitation you send, the reply goes to this address. Leave it
+            empty to send invitations without a reply address. Only admins see this setting.
+          </p>
+          <form className="mt-5 space-y-3" onSubmit={submitInviteSettings}>
+            <label className="block">
+              <span className="mb-1.5 block text-xs text-neutral-500">Reply-to address</span>
+              <input
+                type="email"
+                value={inviteReplyTo}
+                onChange={(event) => setInviteReplyTo(event.target.value)}
+                placeholder={account.email}
+                autoComplete="email"
+                className={FIELD_COMPACT}
+              />
+            </label>
+            {inviteMessage ? (
+              <p className={`text-sm ${inviteMessage.ok ? "text-emerald-700" : "text-red-600"}`}>
+                {inviteMessage.text}
+              </p>
+            ) : null}
+            <button type="submit" className={BTN_PRIMARY} disabled={inviteSaving}>
+              {inviteSaving ? "Saving…" : "Save reply address"}
+            </button>
+          </form>
+        </section>
+      ) : null}
 
       <section className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-7">
         <p className={KICKER}>Session</p>

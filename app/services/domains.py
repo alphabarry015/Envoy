@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.domain import DkimStatus, Domain, DomainStatus
 from app.models.user import User
-from app.schemas.domain import DomainResponse
+from app.schemas.domain import DomainResponse, DomainSenderUpdate
 from app.services.aws_ses import DKIM_SELECTOR, SESClientError, SESService
 from app.providers.factory import build_provider_map
 from app.services import brevo_domains, mailtrap_domains, resend_domains
@@ -1032,7 +1032,28 @@ async def _present(
             "providers": tools,
             "region": settings.aws_region,
             "nameservers": await _nameservers(ses, domain.name),
-            "mail_from": f"{settings.mail_from_local_part}@{domain.name}",
+            "mail_from": f"{domain.from_local_part or 'noreply'}@{domain.name}",
+            "sender_configured": domain.sender_configured_at is not None,
             "tool_warnings": list(tool_warnings or []),
         }
     )
+
+
+async def update_domain_sender(
+    db: AsyncSession,
+    user: User,
+    domain_id: UUID,
+    payload: DomainSenderUpdate,
+    ses: SESService,
+) -> DomainResponse:
+    domain = await db.get(Domain, domain_id)
+    if domain is None or domain.user_id != user.id:
+        raise DomainError(404, "Domain not found.")
+    domain.from_local_part = payload.from_local_part
+    domain.from_name = payload.from_name
+    domain.reply_to = str(payload.reply_to).lower() if payload.reply_to else None
+    domain.sender_configured_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(domain)
+    await _notify_domains(user.id, domain_id=str(domain.id), reason="sender_updated")
+    return await _present(domain, ses)

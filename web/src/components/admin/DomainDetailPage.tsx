@@ -7,6 +7,7 @@ import {
   Globe2,
   KeyRound,
   Link2,
+  Mail,
   MoreVertical,
   PlusCircle,
   RefreshCw,
@@ -40,6 +41,7 @@ import { providerLabel } from "../../lib/providerOptions";
 import { type ProviderItem, fetchProviders, roleLabel } from "../../lib/providers";
 import { onRealtime, onVisibleRefresh } from "../../lib/realtime";
 import { PageLoading } from "../ui/ScanLoading";
+import DomainSenderModal from "./DomainSenderModal";
 import { useToast } from "../ui/Toast";
 
 const STEPS: ReadonlyArray<{
@@ -112,6 +114,7 @@ export default function DomainDetailPage() {
   /** Tool whose DNS is shown below (inline, no modal). */
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [senderOpen, setSenderOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const dnsSectionRef = useRef<HTMLElement>(null);
 
@@ -477,6 +480,17 @@ export default function DomainDetailPage() {
         Back to domains
       </Link>
 
+      {senderOpen ? (
+        <DomainSenderModal
+          domain={domain}
+          onClose={() => setSenderOpen(false)}
+          onSaved={(updated) => {
+            setDomain((current) => (current ? { ...current, ...updated } : updated));
+            setSenderOpen(false);
+            toast.success("Sender saved", `Default sender: ${updated.mailFrom}`);
+          }}
+        />
+      ) : null}
       {/* Section 1 — identity + actions + meta */}
       <section className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -488,7 +502,8 @@ export default function DomainDetailPage() {
               {domain.name}
             </h2>
             <p className="mt-2 font-mono text-xs text-neutral-500">
-              {domain.mailFrom || `noreply@${domain.name}`}
+              {domain.fromName ? `${domain.fromName} <${domain.mailFrom}>` : domain.mailFrom}
+              {domain.replyTo ? ` · replies → ${domain.replyTo}` : " · no replies"}
             </p>
           </div>
 
@@ -519,17 +534,43 @@ export default function DomainDetailPage() {
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
-                aria-label="Domain actions"
-                className="inline-flex size-8 items-center justify-center rounded-sm border border-neutral-200 text-neutral-600 transition-colors hover:border-[#0A4BD6]/40 hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
+                aria-label={
+                  domain.senderConfigured ? "Domain actions" : "Domain actions (sender not configured)"
+                }
+                className="relative inline-flex size-8 items-center justify-center rounded-sm border border-neutral-200 text-neutral-600 transition-colors hover:border-[#0A4BD6]/40 hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
                 onClick={() => setMenuOpen((open) => !open)}
               >
                 <MoreVertical className="size-4" aria-hidden="true" />
+                {domain.senderConfigured ? null : (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -top-1 -right-1 flex size-2.5"
+                  >
+                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-orange-400 opacity-60" />
+                    <span className="relative inline-flex size-2.5 rounded-full border border-white bg-orange-500" />
+                  </span>
+                )}
               </button>
               {menuOpen ? (
                 <div
                   role="menu"
-                  className="absolute right-0 z-20 mt-1.5 min-w-[160px] overflow-hidden rounded-sm border border-neutral-200 bg-white py-1 shadow-sm"
+                  className="absolute right-0 z-20 mt-1.5 min-w-[190px] overflow-hidden rounded-sm border border-neutral-200 bg-white py-1 shadow-sm"
                 >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setSenderOpen(true);
+                    }}
+                  >
+                    <Mail className="size-3.5" aria-hidden="true" />
+                    Sender & replies
+                    {domain.senderConfigured ? null : (
+                      <span className="ml-auto size-2 rounded-full bg-orange-500" aria-label="Not configured" />
+                    )}
+                  </button>
                   {linkModalOptions.length > 0 || blockedToLink.length > 0 ? (
                     <button
                       type="button"

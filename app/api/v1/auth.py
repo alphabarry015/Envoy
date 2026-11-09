@@ -11,6 +11,7 @@ from app.models.user import User
 from app.schemas.user import (
     AcceptInviteRequest,
     InviteCreatedResponse,
+    InviteSettingsUpdate,
     InviteUserRequest,
     LoginRequest,
     PasswordChangeRequest,
@@ -69,6 +70,18 @@ async def login(
 @router.get("/me", response_model=UserResponse, summary="Session courante")
 async def me(user: User = Depends(get_current_user)) -> User:
     return user
+
+
+@router.put("/me/invite-settings", response_model=UserResponse, summary="Adresse de réponse des invitations")
+async def update_invite_settings(
+    payload: InviteSettingsUpdate,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+) -> User:
+    admin.invite_reply_to = str(payload.invite_reply_to).lower() if payload.invite_reply_to else None
+    await db.commit()
+    await db.refresh(admin)
+    return admin
 
 
 @router.get("/users", response_model=list[UserResponse], summary="Lister les comptes")

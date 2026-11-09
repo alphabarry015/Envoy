@@ -24,6 +24,7 @@ from app.sql_files import read_sql
 from app.providers import EmailProviderError
 from app.providers.factory import build_provider_map
 from app.providers.router import EmailRouter
+from app.services.invite_email import render_invite
 from app.services.realtime import publish as realtime_publish
 from app.schemas.user import (
     AcceptInviteRequest,
@@ -117,21 +118,6 @@ def _activation_link(token: str) -> str:
     return f"{base}/auth/accept-invite?token={quote(token, safe='')}"
 
 
-def _invite_bodies(link: str, expires: datetime) -> tuple[str, str]:
-    when = expires.strftime("%d %b %Y %H:%M UTC")
-    text = (
-        "You have been invited to Envoy.\n\n"
-        f"Activate your account:\n{link}\n\n"
-        f"This link expires on {when} and can be used once.\n"
-    )
-    html = (
-        "<p>You have been invited to Envoy.</p>"
-        f'<p><a href="{link}">Activate your account</a></p>'
-        f"<p>This link expires on {when} and can be used once.</p>"
-    )
-    return text, html
-
-
 async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest) -> InviteCreatedResponse:
     _require_admin(actor)
     email = payload.email.lower()
@@ -171,7 +157,13 @@ async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest)
     await db.commit()
     await db.refresh(user)
     link = _activation_link(raw_token)
-    text_body, html_body = _invite_bodies(link, expires)
+    subject, text_body, html_body = render_invite(
+        link=link,
+        expires=expires,
+        recipient=user.email,
+        inviter=actor.display_name or actor.email,
+        site_url=settings.public_app_url.rstrip("/"),
+    )
     tool = payload.provider.strip().lower()
     providers = build_provider_map()
     chosen = providers.get(tool)
@@ -185,9 +177,10 @@ async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest)
         await EmailRouter([chosen]).send(
             from_address=f"Envoy <{settings.platform_mail_from}>",
             to_addresses=[user.email],
-            subject="Activate your Envoy account",
+            subject=subject,
             html=html_body,
             text=text_body,
+            reply_to=[actor.invite_reply_to] if actor.invite_reply_to else None,
         )
     except EmailProviderError as exc:
         raise AuthError(

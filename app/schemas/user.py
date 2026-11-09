@@ -92,8 +92,15 @@ class UserResponse(BaseModel):
     monthly_send_quota: int | None = None
     can_create_api_keys: bool
     invite_token_expires_at: datetime | None = None
+    invite_reply_to: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class InviteSettingsUpdate(BaseModel):
+    """Reply-To of the invitation emails sent by this admin. None = no Reply-To."""
+
+    invite_reply_to: EmailStr | None = None
 
 
 class UserUpdateRequest(BaseModel):

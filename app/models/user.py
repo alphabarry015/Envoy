@@ -67,6 +67,8 @@ class User(Base):
         default=True,
         server_default=text("true"),
     )
+    # Admin only: Reply-To of the invitation emails this admin sends.
+    invite_reply_to: Mapped[str | None] = mapped_column(String(320), nullable=True)
     # Bumped to invalidate every console JWT issued before (claim "tv").
     token_version: Mapped[int] = mapped_column(
         Integer,

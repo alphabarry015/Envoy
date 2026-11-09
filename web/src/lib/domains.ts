@@ -37,6 +37,13 @@ export type ConsoleDomain = {
   createdAt: string;
   verifiedAt: string | null;
   mailFrom?: string;
+  /** Default sender local part when an API call omits "from". */
+  fromLocalPart?: string;
+  fromName?: string | null;
+  /** Reply-To added when an API call has none. Null = replies not expected. */
+  replyTo?: string | null;
+  /** False until the sender settings were saved once (orange dot in the UI). */
+  senderConfigured?: boolean;
   /** Backend warnings when a tool could not sync DNS. */
   toolWarnings?: string[];
 };
@@ -181,6 +188,10 @@ type DomainPayload = {
   region?: string;
   nameservers?: string[];
   mail_from?: string;
+  from_local_part?: string;
+  from_name?: string | null;
+  reply_to?: string | null;
+  sender_configured?: boolean;
   tool_warnings?: string[];
 };
 
@@ -228,6 +239,10 @@ function fromPayload(row: DomainPayload): ConsoleDomain {
     createdAt: row.created_at,
     verifiedAt: row.verified_at,
     mailFrom: row.mail_from || `noreply@${row.name}`,
+    fromLocalPart: row.from_local_part || "noreply",
+    fromName: row.from_name ?? null,
+    replyTo: row.reply_to ?? null,
+    senderConfigured: Boolean(row.sender_configured),
     toolWarnings: Array.isArray(row.tool_warnings) ? row.tool_warnings : [],
   };
 }
@@ -292,4 +307,39 @@ export async function disconnectRemoteDomain(id: string): Promise<void> {
     headers: authHeader(),
   });
   if (!response.ok) throw new Error(await readError(response));
+}
+
+export type DomainSenderInput = {
+  fromLocalPart: string;
+  fromName: string;
+  replyMode: "none" | "address";
+  replyTo: string;
+};
+
+export async function updateDomainSender(id: string, input: DomainSenderInput): Promise<ConsoleDomain> {
+  const response = await fetch(`${apiUrl()}/api/v1/domains/${id}/sender`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({
+      from_local_part: input.fromLocalPart.trim(),
+      from_name: input.fromName.trim() || null,
+      reply_mode: input.replyMode,
+      reply_to: input.replyMode === "address" ? input.replyTo.trim() : null,
+    }),
+  });
+  if (!response.ok) {
+    let detail = "Could not save the sender settings.";
+    try {
+      const body = (await response.json()) as { detail?: unknown };
+      if (typeof body.detail === "string") detail = body.detail;
+      else if (Array.isArray(body.detail) && body.detail.length > 0) {
+        const first = body.detail[0] as { msg?: string };
+        if (typeof first.msg === "string") detail = first.msg.replace(/^Value error, /, "");
+      }
+    } catch {
+      /* réponse non JSON */
+    }
+    throw new Error(detail);
+  }
+  return fromPayload((await response.json()) as DomainPayload);
 }

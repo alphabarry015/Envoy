@@ -251,8 +251,15 @@ export default function DomainsPanel() {
                   className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-[#0A4BD6]/5"
                 >
                   <span className="min-w-0">
-                    <span className="block font-mono text-sm text-neutral-900">
+                    <span className="flex items-center gap-2 font-mono text-sm text-neutral-900">
                       {domain.name}
+                      {domain.senderConfigured ? null : (
+                        <span
+                          className="size-2 shrink-0 rounded-full bg-orange-500"
+                          title="Sender and replies not configured"
+                          aria-label="Sender not configured"
+                        />
+                      )}
                     </span>
                     <span className="mt-1 block font-mono text-[11px] text-neutral-400">
                       {domain.sendingProviders

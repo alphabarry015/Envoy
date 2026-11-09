@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 from uuid import UUID
@@ -53,8 +54,11 @@ async def accept_send(db: AsyncSession, api_key: ApiKey, payload: EmailSendReque
 
     from_address, domain = await _choose_sender(db, user, payload.from_address)
     payload.from_address = from_address
-    if domain is None and not payload.reply_to:
-        payload.reply_to = [user.email]
+    if not payload.reply_to:
+        if domain is None:
+            payload.reply_to = [user.email]
+        elif domain.reply_to:
+            payload.reply_to = [domain.reply_to]
     recipients = _recipients(payload)
     suppressed = await _suppressed(db, recipients, user.id)
     if not suppressed:
@@ -177,14 +181,23 @@ async def _choose_sender(
     user: User,
     requested: str | None,
 ) -> tuple[str, Domain | None]:
-    """Domaine vérifié du compte, sinon noreply@ du domaine plateforme."""
-    local_part = settings.mail_from_local_part
+    """Domaine vérifié du compte (expéditeur réglé sur le domaine), sinon la plateforme."""
     if requested:
         return requested, await _verified_domain(db, user.id, address_in_from(requested))
     domain = await _default_verified_domain(db, user.id)
     if domain is not None:
-        return f"{local_part}@{domain.name}", domain
+        return domain_sender(domain), domain
     return settings.platform_mail_from, None
+
+
+def domain_sender(domain: Domain) -> str:
+    address = f"{domain.from_local_part or settings.mail_from_local_part}@{domain.name}"
+    if domain.from_name:
+        name = domain.from_name
+        if re.search(r"[,;:()\[\]@.]", name):
+            name = f'"{name}"'
+        return f"{name} <{address}>"
+    return address
 
 
 async def _default_verified_domain(db: AsyncSession, user_id: UUID) -> Domain | None:

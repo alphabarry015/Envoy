@@ -84,6 +84,16 @@ class Domain(Base):
         default=list,
         server_default=text("'[]'::jsonb"),
     )
+    # Default sender used when an API call omits "from" (local@domain).
+    from_local_part: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="noreply", server_default="noreply"
+    )
+    from_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Reply-To added when an API call has none. NULL = replies are not expected.
+    reply_to: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    sender_configured_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

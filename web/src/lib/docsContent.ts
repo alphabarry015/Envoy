@@ -135,6 +135,7 @@ export const DOC_SECTIONS: Record<DocId, DocSection> = {
         rows: [
           ["POST /auth/login", "Email + password → access_token"],
           ["GET /auth/me", "Current user"],
+          ["PUT /auth/me/invite-settings", "Admin only. Reply-To for invitation emails"],
           ["POST /auth/password", "Change password → new access_token"],
           ["POST /auth/sessions/revoke", "Sign out all my devices"],
           ["GET /auth/users", "Admin: list accounts"],
@@ -248,6 +249,7 @@ export const DOC_SECTIONS: Record<DocId, DocSection> = {
           ["GET /domains/{id}", "One domain with its records"],
           ["GET /domains/{id}/verify", "Refresh status from tools and DNS"],
           ["PATCH /domains/{id}/providers", "Change the tools linked to the domain"],
+          ["PUT /domains/{id}/sender", "Default sender and reply mode for the domain"],
           ["DELETE /domains/{id}", "Remove from Envoy (204)"],
         ],
       },
@@ -291,7 +293,7 @@ export const DOC_SECTIONS: Record<DocId, DocSection> = {
         heading: "Sender rules",
         paragraphs: [
           "With from: the host must be a verified domain of your account, or a subdomain of one. The longest match wins. Otherwise 422 \"The from domain is not verified for this account.\"",
-          "Without from: Envoy uses noreply@ on your most recently verified domain. With no verified domain, it uses the platform sender and puts your account email in reply_to.",
+          "Without from: Envoy uses the domain's default sender (noreply@ unless you changed it in Sender & replies) on your most recently verified domain. Without reply_to: Envoy uses the domain's reply address if one is set, otherwise replies are not routed. With no verified domain, it uses the platform sender and puts your account email in reply_to.",
         ],
       },
       {

@@ -13,6 +13,7 @@ from app.schemas.domain import (
     DomainListResponse,
     DomainProvidersUpdate,
     DomainResponse,
+    DomainSenderUpdate,
     DomainVerifyResponse,
 )
 from app.services.aws_ses import SESService, get_ses_service
@@ -24,6 +25,7 @@ from app.services.domains import (
     list_domains,
     refresh_domain,
     update_domain_providers,
+    update_domain_sender,
 )
 
 router = APIRouter()
@@ -76,6 +78,24 @@ async def patch_domain_providers(
 ) -> DomainResponse:
     try:
         return await update_domain_providers(db, user, domain_id, payload.providers, ses)
+    except DomainError as exc:
+        raise _error(exc) from exc
+
+
+@router.put(
+    "/{domain_id}/sender",
+    response_model=DomainResponse,
+    summary="Expéditeur par défaut et adresse de réponse du domaine",
+)
+async def put_domain_sender(
+    domain_id: UUID,
+    payload: DomainSenderUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    ses: SESService = Depends(get_ses_service),
+) -> DomainResponse:
+    try:
+        return await update_domain_sender(db, user, domain_id, payload, ses)
     except DomainError as exc:
         raise _error(exc) from exc
 
