@@ -1,8 +1,15 @@
-"""Platform emails (invitations, access requests): try every connected tool until one accepts."""
+"""Platform emails (invitations, access requests): try every connected tool until one accepts.
+
+A tool is skipped up front when it cannot deliver from the platform domain. Some tools
+(Brevo) accept the API call and drop the message later, so an accepted call alone does
+not prove the email will arrive.
+"""
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 
 from app.core.config import settings
@@ -18,6 +25,9 @@ PROVIDER_LABELS = {
     "brevo": "Brevo",
     "mailtrap": "Mailtrap",
 }
+
+_CACHE_SECONDS = 300
+_cache: dict[tuple[str, str], tuple[float, str | None]] = {}
 
 
 @dataclass
@@ -40,6 +50,87 @@ def _reason(exc: EmailProviderError) -> str:
     return (text[len(prefix):] if text.startswith(prefix) else text)[:180]
 
 
+def _sender_domain() -> str:
+    return settings.platform_mail_from.rsplit("@", 1)[-1].strip().lower()
+
+
+async def _domain_blocker(name: str, domain: str) -> str | None:
+    """Why this tool cannot send from the domain, or None when it can (or we cannot tell)."""
+    if name == "brevo":
+        from app.services import brevo_domains
+
+        config = await brevo_domains.get_domain_config(domain)
+        if not config or not config.get("authenticated"):
+            return f"{domain} is not authenticated in Brevo"
+    elif name == "resend":
+        from app.services import resend_domains
+
+        config = await resend_domains.find_domain(domain)
+        if not config or str(config.get("status") or "").lower() != "verified":
+            return f"{domain} is not verified in Resend"
+    elif name == "mailtrap":
+        from app.services import mailtrap_domains
+
+        config = await mailtrap_domains.find_domain(domain)
+        if not config or not config.get("dns_verified"):
+            return f"{domain} is not verified in Mailtrap"
+    elif name == "ses":
+        identity = await asyncio.to_thread(_sesv2().get_email_identity, EmailIdentity=domain)
+        if not identity.get("VerifiedForSendingStatus"):
+            return f"{domain} is not verified in Amazon SES"
+    return None
+
+
+_sesv2_client = None
+
+
+def _sesv2():
+    global _sesv2_client
+    if _sesv2_client is None:
+        import boto3
+
+        _sesv2_client = boto3.client(
+            "sesv2",
+            region_name=settings.aws_region,
+            aws_access_key_id=settings.aws_access_key_id,
+            aws_secret_access_key=settings.aws_secret_access_key,
+        )
+    return _sesv2_client
+
+
+async def _ses_sandbox_blocker(recipient: str) -> str | None:
+    client = _sesv2()
+    account = await asyncio.to_thread(client.get_account)
+    if account.get("ProductionAccessEnabled"):
+        return None
+    try:
+        identity = await asyncio.to_thread(client.get_email_identity, EmailIdentity=recipient)
+    except Exception:  # noqa: BLE001 - unknown identity means not verified
+        identity = {}
+    if identity.get("VerifiedForSendingStatus"):
+        return None
+    return "Amazon SES is in sandbox mode and only writes to verified addresses"
+
+
+async def _blocker(name: str, recipient: str) -> str | None:
+    domain = _sender_domain()
+    key = (name, domain)
+    now = time.monotonic()
+    cached = _cache.get(key)
+    try:
+        if cached and now - cached[0] < _CACHE_SECONDS:
+            reason = cached[1]
+        else:
+            reason = await _domain_blocker(name, domain)
+            _cache[key] = (now, reason)
+        if reason is None and name == "ses":
+            reason = await _ses_sandbox_blocker(recipient)
+    except Exception as exc:  # noqa: BLE001 - a failed check must not block sending
+        logger.warning("platform_mail_check_failed provider=%s error=%s", name, exc)
+        return None
+    return reason
+
+
 async def deliver(
     *,
     to: str,
@@ -49,7 +140,7 @@ async def deliver(
     reply_to: str | None = None,
     prefer: str | None = None,
 ) -> Delivery:
-    """The preferred tool goes first; any other connected tool steps in if it refuses."""
+    """The preferred tool goes first; any other ready tool steps in if it refuses."""
     providers = build_provider_map()
     names = [name for name, provider in providers.items() if provider.is_configured()]
     if prefer in names:
@@ -57,6 +148,11 @@ async def deliver(
         names.insert(0, prefer)
     result = Delivery()
     for name in names:
+        label = PROVIDER_LABELS.get(name, name)
+        reason = await _blocker(name, to)
+        if reason:
+            result.failures.append(f"{label}: {reason}")
+            continue
         try:
             await EmailRouter([providers[name]]).send(
                 from_address=f"Envoy <{settings.platform_mail_from}>",
@@ -67,11 +163,13 @@ async def deliver(
                 reply_to=[reply_to] if reply_to else None,
             )
         except EmailProviderError as exc:
-            result.failures.append(f"{PROVIDER_LABELS.get(name, name)}: {_reason(exc)}")
+            result.failures.append(f"{label}: {_reason(exc)}")
             logger.warning("platform_mail_failed provider=%s error=%s", name, exc)
             continue
-        result.sent_with = PROVIDER_LABELS.get(name, name)
+        result.sent_with = label
         break
     if not names:
         result.failures.append("No sending tool is connected.")
+    if not result.sent:
+        logger.error("platform_mail_undelivered to_domain=%s reasons=%s", to.rsplit("@", 1)[-1], result.error)
     return result
