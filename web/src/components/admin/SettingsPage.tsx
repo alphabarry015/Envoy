@@ -227,8 +227,9 @@ export default function SettingsPage() {
       <section className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-7">
         <p className={KICKER}>Profile</p>
         <p className="mt-3 text-sm text-neutral-500">
-          Your name appears in the invitations you send. Your email address is
-          never shown.
+          {account.role === "admin"
+            ? "Your name appears in the invitations you send. Your email address is never shown."
+            : "Your name appears in your console and on the admin's member list. Only you can change it."}
         </p>
         <form className="mt-5 space-y-3" onSubmit={submitProfile}>
           <label className="block">

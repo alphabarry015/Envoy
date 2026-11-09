@@ -89,7 +89,10 @@ function toConsoleUser(row: ApiUser): ConsoleUser {
   };
 }
 
-export async function readApiError(response: Response, fallback: string): Promise<string> {
+export async function readApiError(
+  response: Response,
+  fallback: string,
+): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
     if (typeof body.detail === "string") return body.detail;
@@ -104,8 +107,11 @@ export async function readApiError(response: Response, fallback: string): Promis
 }
 
 export async function fetchUsers(): Promise<ConsoleUser[]> {
-  const response = await fetch(`${apiUrl()}/api/v1/auth/users`, { headers: authHeader() });
-  if (!response.ok) throw new Error(await readApiError(response, "Could not load users."));
+  const response = await fetch(`${apiUrl()}/api/v1/auth/users`, {
+    headers: authHeader(),
+  });
+  if (!response.ok)
+    throw new Error(await readApiError(response, "Could not load users."));
   const rows = (await response.json()) as ApiUser[];
   return rows.map(toConsoleUser);
 }
@@ -126,7 +132,8 @@ export async function sendInvite(input: InviteDraft): Promise<IssuedInvite> {
       provider: input.provider,
     }),
   });
-  if (!response.ok) throw new Error(await readApiError(response, "Could not send the invite."));
+  if (!response.ok)
+    throw new Error(await readApiError(response, "Could not send the invite."));
   return toIssuedInvite(await response.json());
 }
 
@@ -143,38 +150,48 @@ export function toIssuedInvite(payload: unknown): IssuedInvite {
   };
 }
 
-export async function updateUser(user: ConsoleUser, draft: InviteDraft): Promise<void> {
+export async function updateUser(
+  user: ConsoleUser,
+  draft: InviteDraft,
+): Promise<void> {
   const response = await fetch(`${apiUrl()}/api/v1/auth/users/${user.id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeader() },
     body: JSON.stringify({
       role: apiRole(draft.role),
       status: user.status,
-      display_name: draft.name,
       max_domains: draft.domainQuota,
       daily_send_quota: draft.dailyQuota,
       monthly_send_quota: draft.monthlyQuota,
       can_create_api_keys: draft.apiKeysEnabled,
     }),
   });
-  if (!response.ok) throw new Error(await readApiError(response, "Could not update this user."));
+  if (!response.ok)
+    throw new Error(
+      await readApiError(response, "Could not update this user."),
+    );
 }
 
-export async function setUserStatus(user: ConsoleUser, status: UserStatus): Promise<void> {
+export async function setUserStatus(
+  user: ConsoleUser,
+  status: UserStatus,
+): Promise<void> {
   const response = await fetch(`${apiUrl()}/api/v1/auth/users/${user.id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeader() },
     body: JSON.stringify({
       role: apiRole(user.role),
       status,
-      display_name: user.name,
       max_domains: user.domainQuota,
       daily_send_quota: user.dailyQuota,
       monthly_send_quota: user.monthlyQuota,
       can_create_api_keys: user.apiKeysEnabled,
     }),
   });
-  if (!response.ok) throw new Error(await readApiError(response, "Could not update this user."));
+  if (!response.ok)
+    throw new Error(
+      await readApiError(response, "Could not update this user."),
+    );
 }
 
 export async function revokeUserInvite(id: string): Promise<void> {
@@ -182,7 +199,10 @@ export async function revokeUserInvite(id: string): Promise<void> {
     method: "DELETE",
     headers: authHeader(),
   });
-  if (!response.ok) throw new Error(await readApiError(response, "Could not revoke this invite."));
+  if (!response.ok)
+    throw new Error(
+      await readApiError(response, "Could not revoke this invite."),
+    );
 }
 
 /** Permanently deletes a suspended account and everything it owns. */
@@ -191,5 +211,8 @@ export async function deleteSuspendedUser(id: string): Promise<void> {
     method: "DELETE",
     headers: authHeader(),
   });
-  if (!response.ok) throw new Error(await readApiError(response, "Could not delete this account."));
+  if (!response.ok)
+    throw new Error(
+      await readApiError(response, "Could not delete this account."),
+    );
 }

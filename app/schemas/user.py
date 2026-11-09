@@ -141,9 +141,10 @@ class InviteSettingsUpdate(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
+    """The name is not here: only the account owner changes it, from PUT /auth/me/profile."""
+
     role: UserRole
     status: UserStatus
-    display_name: str | None = Field(default=None, max_length=120)
     max_domains: int | None = Field(default=None, ge=0)
     daily_send_quota: int | None = Field(default=None, ge=0)
     monthly_send_quota: int | None = Field(default=None, ge=0)

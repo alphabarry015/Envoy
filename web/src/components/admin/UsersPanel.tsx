@@ -142,6 +142,7 @@ export default function UsersPanel() {
 
   const seats = users.filter((user) => user.email !== sessionEmail);
   const editing = seats.find((user) => user.id === editingId) ?? null;
+  const nameLocked = Boolean(editing) || Boolean(fromRequest);
   const menuUser = seats.find((user) => user.id === menuId) ?? null;
   const pendingCount = seats.filter((user) => user.status === "pending").length;
 
@@ -365,18 +366,10 @@ export default function UsersPanel() {
 
   async function saveEdit() {
     if (!editing) return;
-    if (!form.name.trim()) {
-      setError("Enter the person's name.");
-      return;
-    }
     setError(null);
     setSaving(true);
     try {
-      await updateUser(editing, {
-        ...form,
-        name: form.name.trim(),
-        email: editing.email,
-      });
+      await updateUser(editing, { ...form, email: editing.email });
       await reload();
       closeModal();
     } catch (cause: unknown) {
@@ -685,16 +678,25 @@ export default function UsersPanel() {
                         <input
                           ref={nameRef}
                           value={form.name}
+                          readOnly={nameLocked}
+                          aria-readonly={nameLocked}
                           onChange={(event) =>
                             setForm((current) => ({
                               ...current,
                               name: event.target.value,
                             }))
                           }
-                          placeholder="Ada Lovelace"
+                          placeholder={editing ? "No name yet" : "Ada Lovelace"}
                           autoComplete="name"
-                          className={FIELD_COMPACT}
+                          className={`${FIELD_COMPACT} read-only:cursor-not-allowed read-only:bg-neutral-100 read-only:text-neutral-500`}
                         />
+                        {nameLocked ? (
+                          <span className="mt-1.5 block text-xs leading-relaxed text-neutral-500">
+                            {editing
+                              ? "Only this person can change their name, from their Settings."
+                              : "Taken from the access request. They can change it later from their Settings."}
+                          </span>
+                        ) : null}
                       </label>
                       <label className="block">
                         <span className="mb-2 block font-mono text-[11px] tracking-widest text-neutral-400 uppercase">

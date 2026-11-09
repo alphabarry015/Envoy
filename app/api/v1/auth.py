@@ -30,6 +30,7 @@ from app.services.auth import (
     change_password,
     invite_user,
     issue_token,
+    notify_admins_users_changed,
     list_users,
     revoke_invite,
     revoke_sessions,
@@ -155,6 +156,7 @@ async def update_profile(
     user.display_name = payload.display_name
     await db.commit()
     await db.refresh(user)
+    await notify_admins_users_changed(db, {"email": user.email, "reason": "profile_updated"})
     return user
 
 

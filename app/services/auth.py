@@ -304,9 +304,6 @@ async def update_user(db: AsyncSession, actor: User, user_id: UUID, payload: Use
     if payload.role != user.role:
         _revoke_sessions(user)
     user.role = payload.role
-    if payload.display_name is not None:
-        cleaned = " ".join(payload.display_name.split())
-        user.display_name = cleaned or None
     user.max_domains = payload.max_domains
     user.daily_send_quota = payload.daily_send_quota
     user.monthly_send_quota = payload.monthly_send_quota
@@ -315,6 +312,12 @@ async def update_user(db: AsyncSession, actor: User, user_id: UUID, payload: Use
     await db.commit()
     await db.refresh(user)
     return user
+
+
+async def notify_admins_users_changed(db: AsyncSession, data: dict[str, str]) -> None:
+    admin_ids = (await db.scalars(select(User.id).where(User.role == UserRole.ADMIN))).all()
+    for admin_id in admin_ids:
+        await realtime_publish(admin_id, "users.changed", data)
 
 
 async def revoke_invite(db: AsyncSession, actor: User, user_id: UUID) -> None:
