@@ -7,6 +7,7 @@ import SiteHeader from "../components/SiteHeader";
 import FiberField from "../components/ui/FiberField";
 import SplitPillButton from "../components/ui/SplitPillButton";
 import { acceptInvite, readSession, signIn } from "../lib/auth";
+import { formatInviteCode } from "../lib/inviteCode";
 
 const INPUT =
   "h-12 w-full rounded-sm border border-white/15 bg-white/5 px-5 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#7EB0FF] focus:ring-2 focus:ring-white/20";
@@ -22,7 +23,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [inviteOpen, setInviteOpen] = useState(Boolean(codeFromUrl));
-  const [inviteToken, setInviteToken] = useState(codeFromUrl);
+  const [inviteToken, setInviteToken] = useState(() => formatInviteCode(codeFromUrl));
   const [invitePassword, setInvitePassword] = useState("");
   const [invitePasswordConfirm, setInvitePasswordConfirm] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -157,7 +158,7 @@ export default function LoginPage() {
                       <span className={LABEL}>Invitation code</span>
                       <input
                         value={inviteToken}
-                        onChange={(event) => setInviteToken(event.target.value)}
+                        onChange={(event) => setInviteToken(formatInviteCode(event.target.value))}
                         placeholder="XXXX-XXXX-XXXX-XXXX"
                         autoCapitalize="characters"
                         autoComplete="one-time-code"

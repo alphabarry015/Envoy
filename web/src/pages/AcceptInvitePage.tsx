@@ -5,6 +5,7 @@ import SiteHeader from "../components/SiteHeader";
 import FiberField from "../components/ui/FiberField";
 import SplitPillButton from "../components/ui/SplitPillButton";
 import { acceptInvite } from "../lib/auth";
+import { formatInviteCode } from "../lib/inviteCode";
 
 const INPUT =
   "h-12 w-full rounded-sm border border-white/15 bg-white/5 px-5 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#7EB0FF] focus:ring-2 focus:ring-white/20";
@@ -65,7 +66,7 @@ export default function AcceptInvitePage() {
                 <input
                   required
                   value={token}
-                  onChange={(event) => setToken(event.target.value)}
+                  onChange={(event) => setToken(formatInviteCode(event.target.value))}
                   placeholder="XXXX-XXXX-XXXX-XXXX"
                   autoCapitalize="characters"
                   autoComplete="one-time-code"
