@@ -59,6 +59,27 @@ class AcceptInviteRequest(BaseModel):
         return self
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetCodeCheck(BaseModel):
+    email: EmailStr
+    code: str = Field(..., min_length=6, max_length=16)
+
+
+class PasswordResetRequest(ResetCodeCheck):
+    new_password: str = Field(..., min_length=10, max_length=128)
+    new_password_confirm: str = Field(..., min_length=10, max_length=128)
+
+    @model_validator(mode="after")
+    def passwords_match(self) -> PasswordResetRequest:
+        if self.new_password != self.new_password_confirm:
+            raise ValueError("Passwords do not match")
+        _check_bcrypt_length(self.new_password)
+        return self
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=1, max_length=128)

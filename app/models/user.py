@@ -67,6 +67,18 @@ class User(Base):
         default=True,
         server_default=text("true"),
     )
+    # Forgot-password flow: HMAC of the 6-digit code, never the code itself.
+    password_reset_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    password_reset_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    password_reset_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     # Admin only: Reply-To of the invitation emails this admin sends.
     invite_reply_to: Mapped[str | None] = mapped_column(String(320), nullable=True)
     # Bumped to invalidate every console JWT issued before (claim "tv").

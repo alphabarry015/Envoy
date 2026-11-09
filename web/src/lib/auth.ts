@@ -1,5 +1,9 @@
 import { apiBase as apiUrl } from "./apiBase";
-import { readJsonStorage, removeStorage, writeJsonStorage } from "./safeStorage";
+import {
+  readJsonStorage,
+  removeStorage,
+  writeJsonStorage,
+} from "./safeStorage";
 
 const STORAGE_KEY = "envoy.console.session";
 
@@ -44,7 +48,10 @@ function storeSession(email: string, accessToken: string): ConsoleSession {
   return session;
 }
 
-export async function signIn(email: string, password: string): Promise<ConsoleSession> {
+export async function signIn(
+  email: string,
+  password: string,
+): Promise<ConsoleSession> {
   const trimmed = email.trim().toLowerCase();
   if (!trimmed || !password) {
     throw new Error("Email and password are required.");
@@ -57,7 +64,10 @@ export async function signIn(email: string, password: string): Promise<ConsoleSe
   if (!response.ok) {
     throw new Error(await readError(response));
   }
-  const body = (await response.json()) as { access_token?: string; user?: { email?: string } };
+  const body = (await response.json()) as {
+    access_token?: string;
+    user?: { email?: string };
+  };
   if (!body.access_token) {
     throw new Error("Authentication failed.");
   }
@@ -81,11 +91,57 @@ export async function acceptInvite(
   if (!response.ok) {
     throw new Error(await readError(response));
   }
-  const body = (await response.json()) as { access_token?: string; user?: { email?: string } };
+  const body = (await response.json()) as {
+    access_token?: string;
+    user?: { email?: string };
+  };
   if (!body.access_token || !body.user?.email) {
     throw new Error("Authentication failed.");
   }
   return storeSession(body.user.email, body.access_token);
+}
+
+async function postPublic(
+  path: string,
+  body: Record<string, string>,
+): Promise<void> {
+  const response = await fetch(`${apiUrl()}/api/v1/auth/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+}
+
+/** Always succeeds for a well-formed email: the API never says whether the account exists. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await postPublic("password/forgot", { email: email.trim().toLowerCase() });
+}
+
+export async function verifyResetCode(
+  email: string,
+  code: string,
+): Promise<void> {
+  await postPublic("password/verify-code", {
+    email: email.trim().toLowerCase(),
+    code,
+  });
+}
+
+export async function resetPassword(
+  email: string,
+  code: string,
+  password: string,
+  passwordConfirm: string,
+): Promise<void> {
+  await postPublic("password/reset", {
+    email: email.trim().toLowerCase(),
+    code,
+    new_password: password,
+    new_password_confirm: passwordConfirm,
+  });
 }
 
 export function authHeader(): HeadersInit {

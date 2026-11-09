@@ -63,7 +63,6 @@ class AccessRequestOut(BaseModel):
 
 
 class AcceptAccessRequest(BaseModel):
-    role: UserRole = UserRole.USER
     max_domains: int | None = Field(default=None, ge=0)
     daily_send_quota: int | None = Field(default=None, ge=0)
     monthly_send_quota: int | None = Field(default=None, ge=0)

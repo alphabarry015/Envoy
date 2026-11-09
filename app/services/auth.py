@@ -161,8 +161,13 @@ async def _log_invite(
     await realtime_publish(actor.id, "emails.changed", {"kind": "invite"})
 
 
+ONLY_ONE_ADMIN = "Envoy has a single admin account. Invite people as members."
+
+
 async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest) -> InviteCreatedResponse:
     _require_admin(actor)
+    if payload.role == UserRole.ADMIN:
+        raise AuthError(422, ONLY_ONE_ADMIN)
     email = payload.email.lower()
     suppressed = await db.scalar(select(Suppression.email).where(func.lower(Suppression.email) == email))
     if suppressed:
@@ -294,6 +299,8 @@ async def update_user(db: AsyncSession, actor: User, user_id: UUID, payload: Use
         _revoke_sessions(user)
     if user.id == actor.id and payload.role != user.role:
         raise AuthError(403, "You cannot change your own role.")
+    if payload.role == UserRole.ADMIN and user.role != UserRole.ADMIN:
+        raise AuthError(422, ONLY_ONE_ADMIN)
     if payload.role != user.role:
         _revoke_sessions(user)
     user.role = payload.role

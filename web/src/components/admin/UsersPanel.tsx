@@ -715,35 +715,6 @@ export default function UsersPanel() {
                         />
                       </label>
 
-                      <div>
-                        <p className="mb-2 font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
-                          Role
-                        </p>
-                        <div
-                          role="group"
-                          aria-label="Role"
-                          className="inline-flex rounded-sm border border-neutral-200 bg-white p-0.5"
-                        >
-                          {(["member", "admin"] as const).map((role) => (
-                            <button
-                              key={role}
-                              type="button"
-                              aria-pressed={form.role === role}
-                              onClick={() =>
-                                setForm((current) => ({ ...current, role }))
-                              }
-                              className={`rounded-sm px-3 py-1.5 font-mono text-[11px] tracking-widest uppercase transition-colors ${
-                                form.role === role
-                                  ? "bg-[#0A4BD6] text-white"
-                                  : "text-neutral-500 hover:text-[#0A4BD6]"
-                              }`}
-                            >
-                              {role}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
                       {!editing ? (
                         <label className="block">
                           <span className="mb-2 block font-mono text-[11px] tracking-widest text-neutral-400 uppercase">

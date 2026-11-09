@@ -126,8 +126,9 @@ export const DOC_SECTIONS: Record<DocId, DocSection> = {
       {
         heading: "Invites",
         paragraphs: [
-          "There is no public sign-up. An admin calls POST /auth/invite with the email, role, quotas and the tool used to send the invite (ses, resend, brevo or mailtrap). The link expires after INVITE_TOKEN_EXPIRE_HOURS (48 by default) and works once.",
+          "There is no public sign-up and there is a single admin account. The admin calls POST /auth/invite with the email, quotas and the tool used to send the invite (ses, resend, brevo or mailtrap). The link expires after INVITE_TOKEN_EXPIRE_HOURS (48 by default) and works once.",
           "POST /auth/accept-invite with {token, password, password_confirm} activates the account and returns a session. Passwords need 10 to 72 bytes (bcrypt limit).",
+          "Forgot password: POST /auth/password/forgot with {email} always answers 202 and, for an active account, emails a 6-digit code valid 15 minutes. POST /auth/password/verify-code checks {email, code}, then POST /auth/password/reset with {email, code, new_password, new_password_confirm} sets the password and signs out every session. Five wrong codes cancel the code.",
         ],
       },
       {
@@ -145,9 +146,12 @@ export const DOC_SECTIONS: Record<DocId, DocSection> = {
           ["GET /auth/users", "Admin: list accounts"],
           ["PATCH /auth/users/{id}", "Admin: role, status, quotas, can_create_api_keys"],
           ["POST /auth/users/{id}/sessions/revoke", "Admin: sign out an account"],
-          ["DELETE /auth/users/{id}", "Admin: cancel a pending invite"],
+          ["DELETE /auth/users/{id}", "Admin: cancel a pending invite or delete a suspended account"],
           ["POST /auth/invite", "Admin: send an invite"],
           ["POST /auth/accept-invite", "Activate an invite"],
+          ["POST /auth/password/forgot", "Email a password reset code"],
+          ["POST /auth/password/verify-code", "Check a reset code"],
+          ["POST /auth/password/reset", "Set a new password with the code"],
         ],
       },
     ],

@@ -10,7 +10,10 @@ from app.core.database import get_db
 from app.models.user import User
 from app.schemas.user import (
     AcceptInviteRequest,
+    ForgotPasswordRequest,
     InviteCreatedResponse,
+    PasswordResetRequest,
+    ResetCodeCheck,
     InviteSettingsUpdate,
     ProfileUpdate,
     InviteUserRequest,
@@ -32,7 +35,7 @@ from app.services.auth import (
     revoke_sessions,
     update_user,
 )
-from app.services import throttle
+from app.services import password_reset, throttle
 
 router = APIRouter()
 
@@ -66,6 +69,76 @@ async def login(
         raise _auth_error(exc) from exc
     await throttle.clear(db, keys)
     return TokenResponse(access_token=issue_token(user), user=UserResponse.model_validate(user))
+
+
+@router.post(
+    "/password/forgot",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Mot de passe oublié : envoyer un code",
+)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Always 202, so the form never reveals which emails have an account."""
+    keys = throttle.keys_for(
+        "reset", throttle.client_ip(request), str(payload.email), ip_limit=10, account_limit=3
+    )
+    try:
+        await throttle.ensure_allowed(db, keys)
+    except throttle.ThrottledError:
+        raise _TOO_MANY from None
+    await throttle.record_failure(db, keys)
+    await password_reset.request_reset(db, str(payload.email))
+    return {"status": "sent"}
+
+
+async def _reset_guard(request: Request, db: AsyncSession) -> list[tuple[str, int]]:
+    keys = throttle.keys_for("reset-code", throttle.client_ip(request), ip_limit=20)
+    try:
+        await throttle.ensure_allowed(db, keys)
+    except throttle.ThrottledError:
+        raise _TOO_MANY from None
+    return keys
+
+
+@router.post(
+    "/password/verify-code",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Mot de passe oublié : vérifier le code",
+)
+async def verify_reset_code(
+    payload: ResetCodeCheck,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    keys = await _reset_guard(request, db)
+    try:
+        await password_reset.verify_code(db, str(payload.email), payload.code)
+    except AuthError as exc:
+        await throttle.record_failure(db, keys)
+        raise _auth_error(exc) from exc
+
+
+@router.post(
+    "/password/reset",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Mot de passe oublié : choisir un nouveau mot de passe",
+)
+async def reset_forgotten_password(
+    payload: PasswordResetRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    keys = await _reset_guard(request, db)
+    try:
+        await password_reset.reset_password(
+            db, str(payload.email), payload.code, payload.new_password
+        )
+    except AuthError as exc:
+        await throttle.record_failure(db, keys)
+        raise _auth_error(exc) from exc
 
 
 @router.get("/me", response_model=UserResponse, summary="Session courante")
