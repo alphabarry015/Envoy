@@ -33,10 +33,17 @@ def _key(kind: str, value: str) -> str:
     return f"{kind}:{digest}"
 
 
-def keys_for(scope: str, ip: str, account: str | None = None) -> list[tuple[str, int]]:
-    keys = [(_key(f"{scope}-ip", ip), MAX_PER_IP)]
+def keys_for(
+    scope: str,
+    ip: str,
+    account: str | None = None,
+    *,
+    ip_limit: int = MAX_PER_IP,
+    account_limit: int = MAX_PER_ACCOUNT,
+) -> list[tuple[str, int]]:
+    keys = [(_key(f"{scope}-ip", ip), ip_limit)]
     if account:
-        keys.append((_key(f"{scope}-acct", account), MAX_PER_ACCOUNT))
+        keys.append((_key(f"{scope}-acct", account), account_limit))
     return keys
 
 

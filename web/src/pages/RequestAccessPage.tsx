@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
 import SiteHeader from "../components/SiteHeader";
+import { apiBase } from "../lib/apiBase";
 import FiberField from "../components/ui/FiberField";
 import SplitPillButton from "../components/ui/SplitPillButton";
 
@@ -34,14 +35,49 @@ const EMPTY: FormState = {
 export default function RequestAccessPage() {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [submitted, setSubmitted] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [website, setWebsite] = useState("");
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitted(true);
+    if (sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      const response = await fetch(`${apiBase()}/api/v1/access-requests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: form.fullName,
+          email: form.email.trim(),
+          organization: form.organization,
+          volume: form.volume,
+          use_case: form.useCase,
+          website,
+        }),
+      });
+      if (!response.ok) {
+        let detail = "The request could not be sent. Try again later.";
+        try {
+          const body = (await response.json()) as { detail?: unknown };
+          if (typeof body.detail === "string") detail = body.detail;
+          else if (Array.isArray(body.detail)) detail = "Check the fields and try again.";
+        } catch {
+          /* réponse non JSON */
+        }
+        throw new Error(detail);
+      }
+      setSubmitted(true);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "The request could not be sent. Try again later.");
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -187,8 +223,23 @@ export default function RequestAccessPage() {
                       className="w-full rounded-sm border border-white/15 bg-white/5 px-5 py-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#7EB0FF] focus:ring-2 focus:ring-white/20"
                     />
                   </label>
+                  <input
+                    type="text"
+                    name="website"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    aria-hidden="true"
+                    value={website}
+                    onChange={(event) => setWebsite(event.target.value)}
+                    className="absolute -left-[9999px] h-px w-px opacity-0"
+                  />
+                  {error ? (
+                    <p role="alert" className="rounded-sm border border-red-300/40 bg-red-500/15 px-4 py-3 text-sm text-white">
+                      {error}
+                    </p>
+                  ) : null}
                   <SplitPillButton
-                    label="Submit Access Request"
+                    label={sending ? "Sending…" : "Submit Access Request"}
                     type="submit"
                     className="w-full justify-center"
                   />

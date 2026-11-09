@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    access_requests,
     api_keys,
     auth,
     domains,
@@ -26,3 +27,4 @@ api_router.include_router(providers.router, prefix="/providers", tags=["provider
 api_router.include_router(suppressions.router, prefix="/suppressions", tags=["suppressions"])
 api_router.include_router(templates.router, prefix="/templates", tags=["templates"])
 api_router.include_router(realtime.router, tags=["realtime"])
+api_router.include_router(access_requests.router, prefix="/access-requests", tags=["access"])

@@ -102,6 +102,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     invite_token_expire_hours: int = 48
+    # Inbox that receives the public "Request access" form.
+    access_request_email: str = "alphaibrahimabarry917@gmail.com"
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None
 
