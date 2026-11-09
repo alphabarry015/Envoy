@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { apiBase } from "../../lib/apiBase";
-import { authHeader, readSession, signOut } from "../../lib/auth";
+import { authHeader, readSession, replaceAccessToken, signOut, signOutEverywhere } from "../../lib/auth";
 import { BTN_PRIMARY, FIELD_COMPACT, KICKER } from "../../lib/consoleUi";
 import { PageLoading } from "../ui/ScanLoading";
 
@@ -94,6 +94,8 @@ export default function SettingsPage() {
         }),
       });
       if (!response.ok) throw new Error(await readError(response));
+      const body = (await response.json()) as { access_token?: string };
+      if (body.access_token) replaceAccessToken(body.access_token);
       setForm(EMPTY_FORM);
       setSaved(true);
     } catch (cause: unknown) {
@@ -105,6 +107,11 @@ export default function SettingsPage() {
 
   function logout() {
     signOut();
+    navigate("/console/login", { replace: true });
+  }
+
+  async function logoutEverywhere() {
+    await signOutEverywhere();
     navigate("/console/login", { replace: true });
   }
 
@@ -164,7 +171,9 @@ export default function SettingsPage() {
             />
           </label>
           {formError ? <p className="text-sm text-red-600">{formError}</p> : null}
-          {saved ? <p className="text-sm text-emerald-700">Password updated.</p> : null}
+          {saved ? (
+            <p className="text-sm text-emerald-700">Password updated. Other devices were signed out.</p>
+          ) : null}
           <button type="submit" className={BTN_PRIMARY} disabled={saving}>
             {saving ? "Saving…" : "Update password"}
           </button>
@@ -189,6 +198,13 @@ export default function SettingsPage() {
           className="mt-4 inline-flex items-center rounded-sm border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
         >
           Sign out
+        </button>
+        <button
+          type="button"
+          onClick={() => void logoutEverywhere()}
+          className="mt-4 ml-2 inline-flex items-center rounded-sm border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
+        >
+          Sign out of all devices
         </button>
       </section>
     </div>

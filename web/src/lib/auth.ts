@@ -93,6 +93,23 @@ export function authHeader(): HeadersInit {
   return session ? { Authorization: `Bearer ${session.accessToken}` } : {};
 }
 
+export function replaceAccessToken(accessToken: string) {
+  const session = readSession();
+  if (!session || !accessToken) return;
+  writeJsonStorage(sessionStorage, STORAGE_KEY, { ...session, accessToken });
+}
+
 export function signOut() {
   removeStorage(sessionStorage, STORAGE_KEY);
+}
+
+export async function signOutEverywhere(): Promise<void> {
+  try {
+    await fetch(`${apiUrl()}/api/v1/auth/sessions/revoke`, {
+      method: "POST",
+      headers: authHeader(),
+    });
+  } finally {
+    signOut();
+  }
 }

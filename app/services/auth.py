@@ -250,8 +250,11 @@ async def update_user(db: AsyncSession, actor: User, user_id: UUID, payload: Use
         if (user.status, payload.status) not in allowed:
             raise AuthError(422, "This status change is not allowed.")
         user.status = payload.status
+        _revoke_sessions(user)
     if user.id == actor.id and payload.role != user.role:
         raise AuthError(403, "You cannot change your own role.")
+    if payload.role != user.role:
+        _revoke_sessions(user)
     user.role = payload.role
     if payload.display_name is not None:
         cleaned = " ".join(payload.display_name.split())
@@ -286,20 +289,42 @@ async def revoke_invite(db: AsyncSession, actor: User, user_id: UUID) -> None:
         raise AuthError(409, "This invite cannot be revoked.") from exc
 
 
-async def change_password(db: AsyncSession, user: User, payload: PasswordChangeRequest) -> None:
-    """Remplace le mot de passe après vérification de l'actuel."""
+async def change_password(db: AsyncSession, user: User, payload: PasswordChangeRequest) -> str:
+    """Remplace le mot de passe, ferme les autres sessions et renvoie un nouveau jeton."""
     hashed = user.hashed_password
     if not hashed or not await _verify(payload.current_password, hashed):
         raise AuthError(400, "Current password is incorrect.")
     user.hashed_password = await _hash(payload.new_password)
+    _revoke_sessions(user)
     await _mirror_auth_user(db, user)
+    await db.commit()
+    await db.refresh(user)
+    return issue_token(user)
+
+
+def _revoke_sessions(user: User) -> None:
+    user.token_version = (user.token_version or 0) + 1
+
+
+async def revoke_sessions(db: AsyncSession, actor: User, user_id: UUID) -> None:
+    """Invalide tous les jetons console du compte (soi-même, ou n'importe qui pour un admin)."""
+    if user_id != actor.id:
+        _require_admin(actor)
+    user = await db.get(User, user_id)
+    if user is None:
+        raise AuthError(404, "User not found.")
+    _revoke_sessions(user)
     await db.commit()
 
 
 def issue_token(user: User) -> str:
     return create_access_token(
         user.id,
-        extra_claims={"role": user.role.value, "email": user.email},
+        extra_claims={
+            "role": user.role.value,
+            "email": user.email,
+            "tv": user.token_version or 0,
+        },
     )
 
 
@@ -313,6 +338,7 @@ async def ensure_bootstrap_admin(db: AsyncSession) -> None:
         # BOOTSTRAP_ADMIN_PASSWORD is the source of truth for this account.
         if not existing.hashed_password or not await _verify(password, existing.hashed_password):
             existing.hashed_password = await _hash(password)
+            _revoke_sessions(existing)
             await _mirror_auth_user(db, existing)
             await db.commit()
         return

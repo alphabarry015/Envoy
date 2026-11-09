@@ -27,6 +27,7 @@ from app.services.auth import (
     issue_token,
     list_users,
     revoke_invite,
+    revoke_sessions,
     update_user,
 )
 from app.services import throttle
@@ -103,14 +104,44 @@ async def remove_invite(
         raise _auth_error(exc) from exc
 
 
-@router.post("/password", status_code=status.HTTP_204_NO_CONTENT, summary="Changer le mot de passe")
+@router.post("/password", response_model=TokenResponse, summary="Changer le mot de passe")
 async def update_password(
     payload: PasswordChangeRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+) -> TokenResponse:
+    """Change le mot de passe, déconnecte les autres sessions et renvoie un nouveau jeton."""
+    try:
+        token = await change_password(db, user, payload)
+    except AuthError as exc:
+        raise _auth_error(exc) from exc
+    return TokenResponse(access_token=token, user=UserResponse.model_validate(user))
+
+
+@router.post(
+    "/sessions/revoke",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Déconnecter toutes mes sessions",
+)
+async def revoke_my_sessions(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    await revoke_sessions(db, user, user.id)
+
+
+@router.post(
+    "/users/{user_id}/sessions/revoke",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Déconnecter toutes les sessions d'un compte",
+)
+async def revoke_user_sessions(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin),
 ) -> None:
     try:
-        await change_password(db, user, payload)
+        await revoke_sessions(db, admin, user_id)
     except AuthError as exc:
         raise _auth_error(exc) from exc
 

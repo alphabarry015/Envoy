@@ -1,26 +1,28 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import hmac
 import json
 import secrets
+import time
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
-from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
+from app.core.security import open_secret, seal_secret
 from app.models.user import User
 from app.models.webhook import Webhook
 from app.schemas.webhook import WebhookCreatedResponse, WebhookResponse, WebhookWrite
 from app.services.url_guard import UnsafeUrlError, assert_public_destination
 
 MAX_WEBHOOKS_PER_USER = 10
+SIGNATURE_TOLERANCE_SECONDS = 300
+
+__all__ = ["open_secret", "seal_secret", "sign_payload", "verify_signature"]
 
 
 class WebhookError(Exception):
@@ -34,24 +36,6 @@ def _new_secret() -> tuple[str, str, str]:
     raw = f"whsec_{secrets.token_urlsafe(32)}"
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     return raw, digest, f"{raw[:14]}…"
-
-
-def _fernet() -> Fernet:
-    key = base64.urlsafe_b64encode(hashlib.sha256(get_settings().secret_key.encode("utf-8")).digest())
-    return Fernet(key)
-
-
-def seal_secret(raw: str) -> str:
-    return _fernet().encrypt(raw.encode("utf-8")).decode("ascii")
-
-
-def open_secret(token: str | None) -> str | None:
-    if not token:
-        return None
-    try:
-        return _fernet().decrypt(token.encode("ascii")).decode("utf-8")
-    except (InvalidToken, ValueError):
-        return None
 
 
 async def list_webhooks(db: AsyncSession, user: User) -> list[Webhook]:
@@ -156,17 +140,58 @@ async def _ensure_unique_url(
         raise WebhookError(409, "An endpoint with this URL already exists.")
 
 
+def sign_payload(secret: str, timestamp: str, body: str) -> str:
+    """Header value `t=<unix>,v1=<hex HMAC-SHA256 of "<unix>.<body>">`."""
+    digest = hmac.new(
+        secret.encode("utf-8"), f"{timestamp}.{body}".encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    return f"t={timestamp},v1={digest}"
+
+
+def verify_signature(
+    secret: str,
+    header: str,
+    body: str,
+    *,
+    tolerance: int = SIGNATURE_TOLERANCE_SECONDS,
+    now: float | None = None,
+) -> bool:
+    """Reference check for receivers: valid HMAC and timestamp within `tolerance` seconds."""
+    parts = dict(item.split("=", 1) for item in header.split(",") if "=" in item)
+    timestamp = parts.get("t", "")
+    if not timestamp.isdigit():
+        return False
+    if abs((now if now is not None else time.time()) - int(timestamp)) > tolerance:
+        return False
+    expected = sign_payload(secret, timestamp, body).split("v1=", 1)[1]
+    return any(
+        hmac.compare_digest(expected, value.strip())
+        for key, value in (item.split("=", 1) for item in header.split(",") if "=" in item)
+        if key.strip() == "v1"
+    )
+
+
 async def deliver_user_event(
     db: AsyncSession,
     user_id: UUID,
     event: str,
     data: dict[str, str | None],
 ) -> None:
-    """POST signé vers les endpoints actifs abonnés à cet événement."""
+    """POST signé (horodaté, anti-rejeu) vers les endpoints actifs abonnés à cet événement."""
     result = await db.execute(
         select(Webhook).where(Webhook.user_id == user_id, Webhook.is_active.is_(True))
     )
-    body = json.dumps({"type": event, "data": data}, separators=(",", ":"))
+    delivery_id = str(uuid4())
+    body = json.dumps(
+        {
+            "id": delivery_id,
+            "type": event,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "data": data,
+        },
+        separators=(",", ":"),
+    )
+    timestamp = str(int(time.time()))
     event_provider = data.get("provider")
     targets: list[tuple[str, str]] = []
     for record in result.scalars().all():
@@ -180,8 +205,7 @@ async def deliver_user_event(
         secret = open_secret(record.encrypted_secret)
         if secret is None:
             continue
-        signature = hmac.new(secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
-        targets.append((record.url, signature))
+        targets.append((record.url, sign_payload(secret, timestamp, body)))
     if not targets:
         return
 
@@ -193,7 +217,10 @@ async def deliver_user_event(
                 content=body,
                 headers={
                     "Content-Type": "application/json",
+                    "User-Agent": "Envoy-Webhooks/1.0",
                     "X-Envoy-Event": event,
+                    "X-Envoy-Delivery": delivery_id,
+                    "X-Envoy-Timestamp": timestamp,
                     "X-Envoy-Signature": signature,
                 },
             )

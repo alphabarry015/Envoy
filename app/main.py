@@ -14,6 +14,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import SessionLocal, engine, get_db
 from app.services.auth import ensure_bootstrap_admin
+from app.services.vault import reseal_legacy_secrets
 from app.sql_files import read_sql
 
 logger = logging.getLogger("envoy")
@@ -29,6 +30,12 @@ async def lifespan(_app: FastAPI):
     if settings.bootstrap_admin_email and settings.bootstrap_admin_password:
         async with SessionLocal() as session:
             await ensure_bootstrap_admin(session)
+    if settings.encryption_key:
+        try:
+            async with SessionLocal() as session:
+                await reseal_legacy_secrets(session)
+        except Exception:
+            logger.exception("Could not re-seal stored secrets")
     yield
     await engine.dispose()
     logger.info("Shutdown complete")

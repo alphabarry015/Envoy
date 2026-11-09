@@ -286,8 +286,9 @@ export default function WebhooksPanel() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-neutral-500">
-          Endpoints receive delivery events. Each request includes X-Envoy-Event and
-          X-Envoy-Signature. The signing secret is shown once.
+          Endpoints receive delivery events. Each request includes X-Envoy-Event, X-Envoy-Delivery,
+          X-Envoy-Timestamp and X-Envoy-Signature (t=…,v1=…). Reject requests older than 5 minutes.
+          The signing secret is shown once.
         </p>
         {loadError ? <p className="w-full text-sm text-red-600">{loadError}</p> : null}
         <button type="button" onClick={openCreate} className={BTN_PRIMARY}>

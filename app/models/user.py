@@ -67,6 +67,13 @@ class User(Base):
         default=True,
         server_default=text("true"),
     )
+    # Bumped to invalidate every console JWT issued before (claim "tv").
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

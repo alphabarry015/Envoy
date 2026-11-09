@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     ses_sns_topic_arns: str | None = None
 
     secret_key: str = Field(..., min_length=32)
+    # Encrypts stored secrets (webhook signing secrets, DKIM keys). Values sealed
+    # with SECRET_KEY before it was set are still readable and get re-sealed.
+    encryption_key: str | None = Field(default=None, min_length=32)
     api_key_prefix: str = "envoy_live_"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
@@ -115,6 +118,7 @@ class Settings(BaseSettings):
         "webhook_secret_brevo",
         "webhook_secret_mailtrap",
         "ses_sns_topic_arns",
+        "encryption_key",
         "database_url",
         "direct_database_url",
         "supabase_url",
