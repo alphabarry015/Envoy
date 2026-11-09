@@ -12,6 +12,7 @@ class EmailLogResponse(BaseModel):
     id: UUID
     message_id: str
     ses_message_id: str | None = None
+    provider: str | None = None
     from_address: str
     to_addresses: list[str]
     cc_addresses: list[str] = Field(default_factory=list)

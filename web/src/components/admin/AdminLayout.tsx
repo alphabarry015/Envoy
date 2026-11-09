@@ -1,4 +1,5 @@
 import {
+  Cable,
   FlaskConical,
   Globe,
   Inbox,
@@ -22,13 +23,16 @@ import { apiBase } from "../../lib/apiBase";
 
 import { accountInitials, accountName } from "../../lib/account";
 import { authHeader, readSession, signOut } from "../../lib/auth";
+import { ToastProvider } from "../ui/Toast";
 import { ConsoleAccountProvider } from "./consoleAccount";
+import RealtimeBridge from "./RealtimeBridge";
 import { PORTAL_SURFACE } from "../../lib/consoleUi";
 
 type AdminView =
   | "overview"
   | "emails"
   | "domains"
+  | "providers"
   | "templates"
   | "api-keys"
   | "webhooks"
@@ -42,6 +46,7 @@ const NAV: Array<{ id: AdminView; label: string; icon: typeof Globe; path: strin
   { id: "overview", label: "Overview", icon: LayoutDashboard, path: "/console/overview" },
   { id: "emails", label: "Emails", icon: Inbox, path: "/console/emails" },
   { id: "domains", label: "Domains", icon: Globe, path: "/console/domains" },
+  { id: "providers", label: "Providers", icon: Cable, path: "/console/providers" },
   { id: "templates", label: "Templates", icon: LayoutTemplate, path: "/console/templates" },
   { id: "api-keys", label: "API Keys", icon: KeyRound, path: "/console/api-keys" },
   { id: "webhooks", label: "Webhooks", icon: Webhook, path: "/console/webhooks" },
@@ -62,6 +67,10 @@ const PAGE_META: Record<AdminView, { title: string; description: string }> = {
   domains: {
     title: "Domains",
     description: "Declare sending identities and verify Easy DKIM / SPF / DMARC.",
+  },
+  providers: {
+    title: "Providers",
+    description: "Choose sending tools, failover order, and watch consumption.",
   },
   templates: {
     title: "Templates",
@@ -100,6 +109,7 @@ const PAGE_META: Record<AdminView, { title: string; description: string }> = {
 function resolveView(pathname: string): AdminView {
   if (pathname.startsWith("/console/emails")) return "emails";
   if (pathname.startsWith("/console/domains")) return "domains";
+  if (pathname.startsWith("/console/providers")) return "providers";
   if (pathname.startsWith("/console/templates")) return "templates";
   if (pathname.startsWith("/console/api-keys")) return "api-keys";
   if (pathname.startsWith("/console/webhooks")) return "webhooks";
@@ -124,11 +134,14 @@ export default function AdminLayout() {
   const session = useMemo(() => readSession(), []);
   const view = resolveView(pathname);
   const domainDetail = /^\/console\/domains\/([^/]+)/.test(pathname);
+  const providerDetail = /^\/console\/providers\/([^/]+)/.test(pathname);
   const templateMatch = pathname.match(/^\/console\/templates\/([^/]+)/);
   const gallery = templateMatch?.[1] === "gallery";
   const templateEditor = Boolean(templateMatch) && !gallery;
   const immersive = templateEditor || gallery;
-  const visibleNav = NAV.filter((item) => item.id !== "users" || role === "admin");
+  const visibleNav = NAV.filter(
+    (item) => (item.id !== "users" && item.id !== "providers") || role === "admin",
+  );
 
   useEffect(() => {
     if (!session) return;
@@ -200,17 +213,23 @@ export default function AdminLayout() {
 
   const title = domainDetail
     ? "DNS Records"
-    : gallery
-      ? "Templates"
-      : PAGE_META[view].title;
+    : providerDetail
+      ? "Provider usage"
+      : gallery
+        ? "Templates"
+        : PAGE_META[view].title;
   const description = domainDetail
     ? "Identity configuration, verification steps, and registrar records."
-    : gallery
-      ? "Use one to add it to this console."
-      : PAGE_META[view].description;
+    : providerDetail
+      ? "Consumption, delivery status, soft limits, and recent sends for this tool."
+      : gallery
+        ? "Use one to add it to this console."
+        : PAGE_META[view].description;
 
   return (
+    <ToastProvider>
     <ConsoleAccountProvider value={{ ready: role !== null, isAdmin: role === "admin" }}>
+    <RealtimeBridge />
     <main className="relative flex h-svh flex-col overflow-hidden bg-white text-neutral-950">
       <div className="relative z-10 flex h-full w-full">
         {!immersive ? (
@@ -441,5 +460,6 @@ export default function AdminLayout() {
       </div>
     </main>
     </ConsoleAccountProvider>
+    </ToastProvider>
   );
 }

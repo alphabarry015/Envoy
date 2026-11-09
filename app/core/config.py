@@ -77,6 +77,22 @@ class Settings(BaseSettings):
     mail_from_local_part: str = "noreply"
     platform_from_domain: str = "flowenagency.com"
     public_app_url: str = "http://localhost:5173"
+    # Public base URL of the API (used to register inbound webhooks on tools).
+    public_api_url: str | None = None
+    default_from_email: str | None = None
+
+    # Multi-provider: SES first when available, then this ordered fallback list.
+    provider_policy: str = "ses_first"
+    fallback_email_providers: str = "resend,brevo,mailtrap"
+    resend_api_key: str | None = None
+    brevo_api_key: str | None = None
+    mailtrap_api_token: str | None = None
+    webhook_secret_resend: str | None = None
+    webhook_secret_brevo: str | None = None
+    webhook_secret_mailtrap: str | None = None
+    # Comma-separated SNS topic ARNs allowed on /webhooks/ses. Empty = topics
+    # owned by the AWS account of AWS_ACCESS_KEY_ID.
+    ses_sns_topic_arns: str | None = None
 
     secret_key: str = Field(..., min_length=32)
     api_key_prefix: str = "envoy_live_"
@@ -90,6 +106,15 @@ class Settings(BaseSettings):
         "aws_access_key_id",
         "aws_secret_access_key",
         "aws_ses_configuration_set",
+        "default_from_email",
+        "public_api_url",
+        "resend_api_key",
+        "brevo_api_key",
+        "mailtrap_api_token",
+        "webhook_secret_resend",
+        "webhook_secret_brevo",
+        "webhook_secret_mailtrap",
+        "ses_sns_topic_arns",
         "database_url",
         "direct_database_url",
         "supabase_url",
@@ -131,12 +156,37 @@ class Settings(BaseSettings):
         return bool(self.vercel)
 
     @property
+    def supabase_public_url(self) -> str | None:
+        raw = (self.supabase_url or "").strip().rstrip("/")
+        if not raw:
+            return None
+        return raw if raw.startswith(("http://", "https://")) else f"https://{raw}"
+
+    @property
+    def is_development(self) -> bool:
+        return self.app_env.strip().lower() in {"development", "dev", "local", "test"}
+
+    @property
+    def sns_topic_allowlist(self) -> set[str]:
+        return {item.strip() for item in (self.ses_sns_topic_arns or "").split(",") if item.strip()}
+
+    @property
     def inline_send(self) -> bool:
         return self.serverless if self.send_inline is None else self.send_inline
 
     @property
     def platform_mail_from(self) -> str:
+        if self.default_from_email:
+            return self.default_from_email
         return f"{self.mail_from_local_part}@{self.platform_from_domain}"
+
+    @property
+    def fallback_provider_ids(self) -> list[str]:
+        return [
+            item.strip().lower()
+            for item in self.fallback_email_providers.split(",")
+            if item.strip()
+        ]
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -172,7 +222,8 @@ class Settings(BaseSettings):
     @property
     def database_disable_statement_cache(self) -> bool:
         """Le pooler transactionnel Supabase (6543) n'accepte pas les prepared statements."""
-        return _port_of(self.sqlalchemy_database_uri) == 6543
+        uri = self.sqlalchemy_database_uri
+        return _port_of(uri) == 6543 or "pooler" in _host_of(uri)
 
     @property
     def sync_database_url(self) -> str:

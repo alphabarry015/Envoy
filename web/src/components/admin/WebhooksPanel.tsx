@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { BTN_GHOST, BTN_PRIMARY, FIELD_COMPACT, PORTAL_SURFACE } from "../../lib/consoleUi";
+import { PROVIDER_OPTIONS, providerLabel } from "../../lib/providerOptions";
 import { PageLoading } from "../ui/ScanLoading";
 import {
   type ConsoleWebhook,
@@ -31,6 +32,7 @@ function emptyForm() {
     name: "",
     url: "",
     events: ["email.delivered", "email.bounced", "email.complained"] as WebhookEvent[],
+    providers: [] as string[],
   };
 }
 
@@ -62,7 +64,12 @@ export default function WebhooksPanel() {
 
   function openEdit(webhook: ConsoleWebhook) {
     setEditingId(webhook.id);
-    setForm({ name: webhook.name, url: webhook.url, events: [...webhook.events] });
+    setForm({
+      name: webhook.name,
+      url: webhook.url,
+      events: [...webhook.events],
+      providers: webhook.providers ? [...webhook.providers] : [],
+    });
     setError(null);
     setRevealed(null);
     setModalOpen(true);
@@ -122,6 +129,15 @@ export default function WebhooksPanel() {
       events: current.events.includes(eventId)
         ? current.events.filter((item) => item !== eventId)
         : [...current.events, eventId],
+    }));
+  }
+
+  function toggleProvider(providerId: string) {
+    setForm((current) => ({
+      ...current,
+      providers: current.providers.includes(providerId)
+        ? current.providers.filter((item) => item !== providerId)
+        : [...current.providers, providerId],
     }));
   }
 
@@ -188,13 +204,24 @@ export default function WebhooksPanel() {
 
     setSaving(true);
     try {
+      const providers = form.providers.length > 0 ? form.providers : null;
       if (editingId) {
-        const updated = await updateRemoteWebhook(editingId, { name, url, events: form.events });
+        const updated = await updateRemoteWebhook(editingId, {
+          name,
+          url,
+          events: form.events,
+          providers,
+        });
         setWebhooks((current) => current.map((webhook) => (webhook.id === editingId ? updated : webhook)));
         closeModal();
         return;
       }
-      const webhook = await createRemoteWebhook({ name, url, events: form.events });
+      const webhook = await createRemoteWebhook({
+        name,
+        url,
+        events: form.events,
+        providers,
+      });
       setWebhooks((current) => [withoutSecret(webhook), ...current]);
       setRevealed(webhook);
     } catch (reason: unknown) {
@@ -297,6 +324,7 @@ export default function WebhooksPanel() {
                   <th className="px-5 py-3 font-medium">Name</th>
                   <th className="px-5 py-3 font-medium">Endpoint</th>
                   <th className="px-5 py-3 font-medium">Events</th>
+                  <th className="px-5 py-3 font-medium">Providers</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium">Created</th>
                   <th className="px-5 py-3 text-right font-medium">
@@ -331,6 +359,11 @@ export default function WebhooksPanel() {
                       </div>
                     </td>
                     <td className="px-5 py-4 font-mono text-[11px] text-neutral-500">{webhook.events.join(" · ")}</td>
+                    <td className="px-5 py-4 font-mono text-[11px] text-neutral-500">
+                      {webhook.providers?.length
+                        ? webhook.providers.map((id) => providerLabel(id)).join(" · ")
+                        : "All"}
+                    </td>
                     <td className="px-5 py-4">
                       {webhook.status === "active" ? (
                         <span className="inline-flex rounded-sm bg-emerald-50 px-2 py-0.5 font-mono text-[11px] text-emerald-700">
@@ -480,6 +513,42 @@ export default function WebhooksPanel() {
                                 </span>
                                 <span
                                   className={`mt-1 inline-flex size-4 shrink-0 items-center justify-center rounded-sm border ${
+                                    active ? "border-[#0A4BD6] bg-[#0A4BD6] text-white" : "border-neutral-300 bg-white"
+                                  }`}
+                                  aria-hidden="true"
+                                >
+                                  {active ? <Check className="size-3" /> : null}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </fieldset>
+                      <fieldset>
+                        <legend className="font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
+                          Providers
+                        </legend>
+                        <p className="mt-2 text-xs text-neutral-500">
+                          Leave all unchecked to receive events from every transport.
+                        </p>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          {PROVIDER_OPTIONS.map((provider) => {
+                            const active = form.providers.includes(provider.id);
+                            return (
+                              <button
+                                key={provider.id}
+                                type="button"
+                                aria-pressed={active}
+                                onClick={() => toggleProvider(provider.id)}
+                                className={`flex w-full items-center justify-between gap-3 rounded-sm border px-3.5 py-3 text-left transition-colors ${
+                                  active
+                                    ? "border-[#0A4BD6] bg-[#0A4BD6]/5"
+                                    : "border-neutral-200 bg-white hover:border-[#0A4BD6]/35"
+                                }`}
+                              >
+                                <span className="text-sm font-medium text-neutral-900">{provider.label}</span>
+                                <span
+                                  className={`inline-flex size-4 shrink-0 items-center justify-center rounded-sm border ${
                                     active ? "border-[#0A4BD6] bg-[#0A4BD6] text-white" : "border-neutral-300 bg-white"
                                   }`}
                                   aria-hidden="true"

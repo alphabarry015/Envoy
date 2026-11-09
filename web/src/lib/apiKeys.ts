@@ -43,6 +43,8 @@ export type ConsoleApiKey = {
   dailyQuota: number | null;
   /** Monthly send quota; null = unlimited. */
   monthlyQuota: number | null;
+  /** Preferred transport; null = platform auto failover. */
+  preferredProvider: string | null;
   status: ApiKeyStatus;
   createdAt: string;
   lastUsedAt: string | null;
@@ -55,6 +57,7 @@ export type CreateApiKeyInput = {
   scopes: ApiKeyScope[];
   dailyQuota: number | null;
   monthlyQuota: number | null;
+  preferredProvider?: string | null;
 };
 
 const ALPHABET =
@@ -101,6 +104,7 @@ export function createApiKey(input: CreateApiKeyInput): ConsoleApiKey {
     scopes,
     dailyQuota: input.dailyQuota,
     monthlyQuota: input.monthlyQuota,
+    preferredProvider: input.preferredProvider ?? null,
     status: "active",
     createdAt: now,
     lastUsedAt: null,
@@ -116,6 +120,7 @@ type ApiKeyPayload = {
   scopes: ApiKeyScope[];
   daily_quota: number | null;
   monthly_quota: number | null;
+  preferred_provider: string | null;
   is_active: boolean;
   last_used_at: string | null;
   revoked_at: string | null;
@@ -143,6 +148,7 @@ function fromPayload(row: ApiKeyPayload): ConsoleApiKey {
     scopes: row.scopes?.length ? row.scopes : [...DEFAULT_SCOPES],
     dailyQuota: row.daily_quota,
     monthlyQuota: row.monthly_quota,
+    preferredProvider: row.preferred_provider ?? null,
     status: row.is_active ? "active" : "revoked",
     createdAt: row.created_at,
     lastUsedAt: row.last_used_at,
@@ -169,6 +175,7 @@ export async function createRemoteApiKey(input: CreateApiKeyInput): Promise<Cons
       scopes: input.scopes.length > 0 ? input.scopes : [...DEFAULT_SCOPES],
       daily_quota: input.dailyQuota,
       monthly_quota: input.monthlyQuota,
+      preferred_provider: input.preferredProvider ?? null,
     }),
   });
   if (!response.ok) throw new Error(await readError(response));

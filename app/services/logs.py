@@ -54,6 +54,7 @@ def _response(
         id=log.id,
         message_id=log.message_id,
         ses_message_id=log.ses_message_id,
+        provider=log.provider,
         from_address=log.from_address,
         to_addresses=list(log.to_addresses or []),
         cc_addresses=list(log.cc_addresses or []),

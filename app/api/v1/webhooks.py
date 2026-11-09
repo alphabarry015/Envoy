@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
-from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
@@ -12,9 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.user import User
+from app.core.config import settings
 from app.schemas.email import SNSNotification
 from app.schemas.webhook import WebhookCreatedResponse, WebhookResponse, WebhookStatusUpdate, WebhookWrite
+from app.services.provider_webhooks import (
+    ProviderWebhookError,
+    handle_brevo_event,
+    handle_mailtrap_event,
+    handle_resend_event,
+    verify_mailtrap_signature,
+    verify_resend_svix,
+    verify_shared_secret,
+)
 from app.services.ses_events import apply_ses_notification
+from app.services.sns_verify import SnsVerificationError, is_trusted_sns_url, verify_sns_message
 from app.services.webhooks import (
     WebhookError,
     create_webhook,
@@ -26,20 +37,11 @@ from app.services.webhooks import (
 )
 
 router = APIRouter()
-
-ALLOWED_SNS_HOST_SUFFIX = ".amazonaws.com"
+logger = logging.getLogger("envoy.webhooks")
 
 
 def _error(exc: WebhookError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.detail)
-
-
-def _is_trusted_sns_url(url: str | None) -> bool:
-    if not url:
-        return False
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower()
-    return parsed.scheme == "https" and host.endswith(ALLOWED_SNS_HOST_SUFFIX)
 
 
 @router.get("", response_model=list[WebhookResponse], summary="Lister les webhooks")
@@ -67,6 +69,66 @@ async def create_user_webhook(
         raise _error(exc) from exc
 
 
+def _provider_secret(request: Request) -> str | None:
+    auth = request.headers.get("authorization") or ""
+    bearer = None
+    if auth.lower().startswith("bearer "):
+        bearer = auth[7:].strip() or None
+    return (
+        request.headers.get("x-envoy-webhook-secret")
+        or request.headers.get("x-webhook-secret")
+        or bearer
+    )
+
+
+@router.post("/resend", status_code=status.HTTP_200_OK, summary="Webhook Resend")
+async def resend_webhook(request: Request, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+    try:
+        raw = await request.body()
+        headers = {key.lower(): value for key, value in request.headers.items()}
+        verify_resend_svix(
+            raw_body=raw,
+            headers=headers,
+            signing_secret=settings.webhook_secret_resend,
+        )
+        body = json.loads(raw.decode("utf-8") or "{}")
+        kind = await handle_resend_event(db, body if isinstance(body, dict) else {})
+    except ProviderWebhookError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+    return {"status": "accepted", "notification_type": kind}
+
+
+@router.post("/brevo", status_code=status.HTTP_200_OK, summary="Webhook Brevo")
+async def brevo_webhook(request: Request, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+    try:
+        verify_shared_secret(_provider_secret(request), settings.webhook_secret_brevo)
+        body = await request.json()
+        kind = await handle_brevo_event(db, body)
+    except ProviderWebhookError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return {"status": "accepted", "notification_type": kind}
+
+
+@router.post("/mailtrap", status_code=status.HTTP_200_OK, summary="Webhook Mailtrap")
+async def mailtrap_webhook(request: Request, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+    try:
+        raw = await request.body()
+        verify_mailtrap_signature(
+            raw_body=raw,
+            signature=request.headers.get("mailtrap-signature"),
+            signing_secret=settings.webhook_secret_mailtrap,
+        )
+        body = json.loads(raw.decode("utf-8") or "{}")
+        kind = await handle_mailtrap_event(db, body if isinstance(body, (dict, list)) else {})
+    except ProviderWebhookError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+    return {"status": "accepted", "notification_type": kind}
+
+
 @router.post(
     "/ses",
     status_code=status.HTTP_200_OK,
@@ -82,11 +144,16 @@ async def ses_webhook(
         notification = SNSNotification.model_validate(payload)
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid SNS payload") from exc
+    try:
+        await verify_sns_message(payload)
+    except SnsVerificationError as exc:
+        logger.warning("ses_webhook_rejected reason=%s", exc)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid SNS signature") from exc
 
     if notification.Type == "SubscriptionConfirmation":
-        if not _is_trusted_sns_url(notification.SubscribeURL):
+        if not is_trusted_sns_url(notification.SubscribeURL, subscribe=True):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Untrusted SNS SubscribeURL")
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
             response = await client.get(notification.SubscribeURL)  # type: ignore[arg-type]
             response.raise_for_status()
         return {"status": "subscription_confirmed"}

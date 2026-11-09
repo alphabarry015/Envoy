@@ -15,6 +15,10 @@ const DomainsPanel = lazy(() => import("./components/admin/DomainsPanel"));
 const DomainDetailPage = lazy(
   () => import("./components/admin/DomainDetailPage"),
 );
+const ProvidersPanel = lazy(() => import("./components/admin/ProvidersPanel"));
+const ProviderDetailPage = lazy(
+  () => import("./components/admin/ProviderDetailPage"),
+);
 const EmailsPanel = lazy(() => import("./components/admin/EmailsPanel"));
 const EmailDetailPage = lazy(() => import("./components/admin/EmailDetailPage"));
 const TemplatesPanel = lazy(() => import("./components/admin/TemplatesPanel"));
@@ -63,6 +67,8 @@ export default function App() {
             <Route path="emails/:emailId" element={<EmailDetailPage />} />
             <Route path="domains" element={<DomainsPanel />} />
             <Route path="domains/:domainId" element={<DomainDetailPage />} />
+            <Route path="providers" element={<ProvidersPanel />} />
+            <Route path="providers/:providerId" element={<ProviderDetailPage />} />
             <Route path="templates" element={<TemplatesPanel />} />
             <Route path="templates/gallery" element={<StarterTemplatesPage />} />
             <Route path="templates/:templateId" element={<TemplateDetailPage />} />

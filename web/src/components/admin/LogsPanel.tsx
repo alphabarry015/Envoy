@@ -11,6 +11,7 @@ import {
   filterLogs,
 } from "../../lib/emailLogs";
 import { FIELD } from "../../lib/consoleUi";
+import { providerLabel } from "../../lib/providerOptions";
 import { PageLoading } from "../ui/ScanLoading";
 
 const FILTERS: Array<EmailStatus | "all"> = ["all", ...EMAIL_STATUSES];
@@ -107,14 +108,15 @@ export default function LogsPanel() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[960px] table-fixed border-collapse text-left text-sm">
+            <table className="w-full min-w-[1080px] table-fixed border-collapse text-left text-sm">
               <colgroup>
+                <col className="w-[11%]" />
+                <col className="w-[16%]" />
+                <col className="w-[18%]" />
                 <col className="w-[12%]" />
-                <col className="w-[20%]" />
-                <col className="w-[22%]" />
-                <col className="w-[13%]" />
-                <col className="w-[9%]" />
-                <col className="w-[9%]" />
+                <col className="w-[12%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
                 <col className="w-[12%]" />
                 <col className="w-[3%]" />
               </colgroup>
@@ -123,6 +125,7 @@ export default function LogsPanel() {
                   <th className="px-5 py-2.5 font-medium">Message</th>
                   <th className="px-5 py-2.5 font-medium">To</th>
                   <th className="px-5 py-2.5 font-medium">Subject</th>
+                  <th className="px-5 py-2.5 font-medium">Tool</th>
                   <th className="px-5 py-2.5 font-medium">Status</th>
                   <th className="px-5 py-2.5 font-medium">Method</th>
                   <th className="px-5 py-2.5 font-medium">HTTP</th>
@@ -145,6 +148,9 @@ export default function LogsPanel() {
                     </td>
                     <td className="truncate px-5 py-4 text-neutral-600">
                       {log.subject}
+                    </td>
+                    <td className="px-5 py-4">
+                      <ProviderBadge provider={log.provider} />
                     </td>
                     <td className="px-5 py-4">
                       <StatusBadge status={log.status} />
@@ -172,6 +178,21 @@ export default function LogsPanel() {
         )}
       </div>
     </div>
+  );
+}
+
+export function ProviderBadge({ provider }: { provider: string | null | undefined }) {
+  if (!provider) {
+    return (
+      <span className="inline-flex rounded-sm bg-neutral-200/70 px-2 py-0.5 font-mono text-[11px] text-neutral-500">
+        —
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex rounded-sm bg-[#0A4BD6]/10 px-2 py-0.5 font-mono text-[11px] text-[#0A4BD6]">
+      {providerLabel(provider)}
+    </span>
   );
 }
 

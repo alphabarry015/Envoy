@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.models.email_log import EmailStatus
 from app.models.user import ApiKey
 from app.schemas.email import EmailSendRequest, EmailSendResponse
-from app.services.send import SendError, accept_send, perform_ses_send
+from app.services.send import SendError, accept_send, perform_provider_send
 
 router = APIRouter()
 
@@ -26,10 +26,10 @@ async def send_email(
     db: AsyncSession = Depends(get_db),
     api_key: ApiKey = Depends(get_send_api_key),
 ) -> EmailSendResponse:
-    """Contrôle la clé, le domaine, la suppression et les quotas, puis envoie via SES.
+    """Contrôle la clé, le domaine, la suppression et les quotas, puis envoie.
 
-    Une clé sandbox est acceptée sans appel AWS. Une clé live répond tout de suite
-    avec le statut `queued` ; l'appel SES suit dans la même requête, après la réponse.
+    Une clé sandbox est acceptée sans appel provider. Une clé live répond tout de suite
+    avec le statut `queued` ; l'envoi suit dans la même requête, après la réponse.
     """
     try:
         log = await accept_send(db, api_key, payload)
@@ -39,7 +39,7 @@ async def send_email(
     status_value = log.status
     if log.status == EmailStatus.QUEUED:
         if settings.inline_send:
-            status_value = await perform_ses_send(log.id, payload) or log.status
+            status_value = await perform_provider_send(log.id, payload) or log.status
         else:
-            background_tasks.add_task(perform_ses_send, log.id, payload)
+            background_tasks.add_task(perform_provider_send, log.id, payload)
     return EmailSendResponse(message_id=log.message_id, status=status_value.value)

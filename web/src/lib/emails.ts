@@ -21,6 +21,8 @@ export type ConsoleEmail = {
   to: string;
   subject: string;
   status: MailStatus;
+  /** Sending tool that handled this message. */
+  provider: string | null;
   /** POST is a message this workspace sent. GET is a message it received. */
   method: HttpMethod;
   text: string;
@@ -35,6 +37,7 @@ function emailFromLog(log: ConsoleEmailLog): ConsoleEmail {
     to: log.to.join(", ") || "—",
     subject: log.subject,
     status,
+    provider: log.provider,
     method: "POST",
     text: log.text || "This send has no stored message body.",
     sentAt: log.sentAt ?? log.createdAt,
@@ -62,7 +65,15 @@ export function filterEmails(
     if (direction === "received" && email.method !== "GET") return false;
     if (status !== "all" && email.status !== status) return false;
     if (!needle) return true;
-    const haystack = [email.to, email.from, email.subject, email.status, email.method, email.text]
+    const haystack = [
+      email.to,
+      email.from,
+      email.subject,
+      email.status,
+      email.provider ?? "",
+      email.method,
+      email.text,
+    ]
       .join(" ")
       .toLowerCase();
     return haystack.includes(needle);

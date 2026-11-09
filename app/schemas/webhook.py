@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from urllib.parse import urlparse
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.services.url_guard import UnsafeUrlError, check_url_syntax
 
 WEBHOOK_EVENTS = {
     "email.sent",
@@ -17,12 +18,10 @@ WEBHOOK_EVENTS = {
 
 
 def _normalize_url(value: str) -> str:
-    parsed = urlparse(value.strip())
-    host = (parsed.hostname or "").lower()
-    local = host in {"localhost", "127.0.0.1"}
-    if parsed.scheme == "https" or (parsed.scheme == "http" and local):
-        return parsed.geturl()
-    raise ValueError("Use an https URL. http is only allowed on localhost.")
+    try:
+        return check_url_syntax(value)
+    except UnsafeUrlError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 class WebhookStatusUpdate(BaseModel):
@@ -33,6 +32,7 @@ class WebhookWrite(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     url: str = Field(..., min_length=8, max_length=2048)
     events: list[str] = Field(..., min_length=1)
+    providers: list[str] | None = None
 
     @field_validator("url")
     @classmethod
@@ -47,6 +47,20 @@ class WebhookWrite(BaseModel):
             raise ValueError("Unknown webhook event.")
         return value
 
+    @field_validator("providers")
+    @classmethod
+    def known_providers(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        allowed = {"ses", "resend", "brevo", "mailtrap"}
+        cleaned = [item.strip().lower() for item in value if item and item.strip()]
+        if not cleaned:
+            return None
+        unknown = [item for item in cleaned if item not in allowed]
+        if unknown or len(set(cleaned)) != len(cleaned):
+            raise ValueError("Unknown provider filter.")
+        return cleaned
+
 
 class WebhookResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -55,6 +69,7 @@ class WebhookResponse(BaseModel):
     name: str
     url: str
     events: list[str]
+    providers: list[str] | None = None
     secret_prefix: str
     is_active: bool
     created_at: datetime

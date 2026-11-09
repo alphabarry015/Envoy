@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { apiBase } from "../lib/apiBase";
 import { authHeader } from "../lib/auth";
 import { formatSentAgo } from "../lib/emails";
+import { providerLabel } from "../lib/providerOptions";
 import { PageLoading } from "../components/ui/ScanLoading";
 
 type OverviewActivity = {
@@ -11,6 +12,7 @@ type OverviewActivity = {
   message_id: string;
   subject: string;
   status: string;
+  provider?: string | null;
   created_at: string;
 };
 
@@ -112,9 +114,16 @@ export function OverviewPanel() {
                   to={`/console/emails/${row.id}`}
                   className="flex flex-wrap items-center justify-between gap-3 hover:text-[#0A4BD6]"
                 >
-                  <span className="font-mono text-neutral-700">{row.message_id}</span>
-                  <span className="text-neutral-600">{row.subject}</span>
-                  <span className="text-neutral-400">{formatSentAgo(row.created_at)}</span>
+                  <span className="min-w-0">
+                    <span className="block font-mono text-neutral-700">{row.message_id}</span>
+                    <span className="mt-0.5 block text-neutral-600">{row.subject}</span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span className="block font-mono text-[11px] text-[#0A4BD6]">
+                      {row.provider ? providerLabel(row.provider) : "—"}
+                    </span>
+                    <span className="mt-0.5 block text-neutral-400">{formatSentAgo(row.created_at)}</span>
+                  </span>
                 </Link>
               </li>
             ))}

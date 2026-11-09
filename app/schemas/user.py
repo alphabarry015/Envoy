@@ -8,6 +8,15 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 from app.models.user import UserRole, UserStatus
 
 
+_INVITE_PROVIDERS = frozenset({"ses", "resend", "brevo", "mailtrap"})
+
+
+def _check_bcrypt_length(password: str) -> None:
+    # bcrypt silently ignores everything past 72 bytes.
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("Password is too long (72 bytes maximum).")
+
+
 class InviteUserRequest(BaseModel):
     email: EmailStr
     display_name: str = Field(..., min_length=1, max_length=120)
@@ -17,6 +26,8 @@ class InviteUserRequest(BaseModel):
     monthly_send_quota: int | None = Field(default=None, ge=0)
     can_create_api_keys: bool = True
     invite_expires_hours: int | None = Field(default=None, ge=1, le=365 * 24)
+    # Tool used to deliver the invite email (required — no silent SES-only path).
+    provider: str = Field(..., min_length=1, max_length=32)
 
     @field_validator("display_name")
     @classmethod
@@ -24,6 +35,14 @@ class InviteUserRequest(BaseModel):
         cleaned = " ".join(value.split())
         if not cleaned:
             raise ValueError("Name is required.")
+        return cleaned
+
+    @field_validator("provider")
+    @classmethod
+    def clean_provider(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if cleaned not in _INVITE_PROVIDERS:
+            raise ValueError("Unknown sending tool. Choose SES, Resend, Brevo, or Mailtrap.")
         return cleaned
 
 
@@ -36,6 +55,7 @@ class AcceptInviteRequest(BaseModel):
     def passwords_match(self) -> AcceptInviteRequest:
         if self.password != self.password_confirm:
             raise ValueError("Passwords do not match")
+        _check_bcrypt_length(self.password)
         return self
 
 
@@ -55,6 +75,7 @@ class PasswordChangeRequest(BaseModel):
             raise ValueError("Passwords do not match")
         if self.new_password == self.current_password:
             raise ValueError("Choose a different password")
+        _check_bcrypt_length(self.new_password)
         return self
 
 
@@ -103,6 +124,7 @@ class ApiKeyCreate(BaseModel):
     scopes: list[str] = Field(default_factory=lambda: ["send"], min_length=1)
     daily_quota: int | None = Field(default=None, ge=1)
     monthly_quota: int | None = Field(default=None, ge=1)
+    preferred_provider: str | None = None
 
     @model_validator(mode="after")
     def known_scopes(self) -> ApiKeyCreate:
@@ -110,6 +132,14 @@ class ApiKeyCreate(BaseModel):
         unknown = [scope for scope in self.scopes if scope not in allowed]
         if unknown or len(set(self.scopes)) != len(self.scopes):
             raise ValueError("Unknown API key scope.")
+        if self.preferred_provider is not None:
+            value = self.preferred_provider.strip().lower()
+            if value in {"", "auto"}:
+                self.preferred_provider = None
+            elif value not in {"ses", "resend", "brevo", "mailtrap"}:
+                raise ValueError("Unknown preferred provider.")
+            else:
+                self.preferred_provider = value
         return self
 
 
@@ -123,6 +153,7 @@ class ApiKeyResponse(BaseModel):
     scopes: list[str]
     daily_quota: int | None = None
     monthly_quota: int | None = None
+    preferred_provider: str | None = None
     is_active: bool
     last_used_at: datetime | None = None
     revoked_at: datetime | None = None

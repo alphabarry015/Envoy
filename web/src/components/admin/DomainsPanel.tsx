@@ -1,5 +1,5 @@
-import { Check, ChevronRight, Globe, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { Check, ChevronDown, ChevronRight, Globe, RefreshCw, X } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 
@@ -9,6 +9,7 @@ import {
   connectRemoteDomain,
   fetchDomains,
   normalizeDomain,
+  updateDomainProviders,
 } from "../../lib/domains";
 import {
   BTN_GHOST,
@@ -16,41 +17,85 @@ import {
   FIELD_COMPACT,
   PORTAL_SURFACE,
 } from "../../lib/consoleUi";
+import { providerLabel } from "../../lib/providerOptions";
+import { type ProviderItem, fetchProviders } from "../../lib/providers";
+import { onRealtime, onVisibleRefresh } from "../../lib/realtime";
 import { PageLoading } from "../ui/ScanLoading";
+import { useToast } from "../ui/Toast";
 
 export default function DomainsPanel() {
   const titleId = useId();
   const navigate = useNavigate();
+  const toast = useToast();
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [domains, setDomains] = useState<ConsoleDomain[]>([]);
+  const [configuredProviders, setConfiguredProviders] = useState<ProviderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [input, setInput] = useState("");
+  const [selectedProvider, setSelectedProvider] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void fetchDomains()
-      .then((rows) => {
-        if (!cancelled) setDomains(rows);
-      })
-      .catch((reason: unknown) => {
-        if (!cancelled) {
-          setLoadError(reason instanceof Error ? reason.message : "Could not load domains.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+  const reload = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoadError(null);
+    if (opts?.silent) setSyncing(true);
+    try {
+      const [rows, providers] = await Promise.all([fetchDomains(), fetchProviders()]);
+      // Tous les outils connectés (SES, Resend, Brevo, Mailtrap) sont sélectionnables.
+      const configured = providers.items.filter(
+        (item) => item.connected && item.enabled,
+      );
+      setDomains(rows);
+      setConfiguredProviders(configured);
+    } catch (reason: unknown) {
+      if (!opts?.silent) {
+        setLoadError(reason instanceof Error ? reason.message : "Could not load domains.");
+      }
+    } finally {
+      setLoading(false);
+      setSyncing(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  // Realtime pushes Envoy and Resend changes; Brevo / Mailtrap have no domain
+  // events, so a visible tab also re-syncs on a slow interval.
+  useEffect(() => {
+    const refresh = () => void reload({ silent: true });
+    const stopRealtime = onRealtime(["domains.changed", "realtime.ready"], refresh);
+    const stopVisible = onVisibleRefresh(refresh, 30_000);
+    return () => {
+      stopRealtime();
+      stopVisible();
+    };
+  }, [reload]);
+
+  function defaultProviderId(items: ProviderItem[]): string {
+    // Prefer a DNS-capable tool, but never lock the UI to SES only.
+    return (
+      items.find((item) => item.id === "ses" && item.domain_capable !== false)?.id ??
+      items.find((item) => item.domain_capable !== false)?.id ??
+      items[0]?.id ??
+      ""
+    );
+  }
+
+  function toolOptionLabel(provider: ProviderItem): string {
+    if (provider.domain_capable === false) {
+      return `${provider.label} · Send only (domains unavailable)`;
+    }
+    return `${provider.label} · DNS verify`;
+  }
 
   function openModal() {
     setInput("");
+    setSelectedProvider(defaultProviderId(configuredProviders));
     setError(null);
     setModalOpen(true);
   }
@@ -59,6 +104,7 @@ export default function DomainsPanel() {
     setModalOpen(false);
     setError(null);
     setInput("");
+    setSelectedProvider("");
   }
 
   useEffect(() => {
@@ -84,19 +130,67 @@ export default function DomainsPanel() {
       setError("Enter a valid domain (e.g. mail.acme.io).");
       return;
     }
-    if (domains.some((domain) => domain.name === name)) {
-      setError("This domain is already declared in the workspace.");
+    if (!selectedProvider) {
+      setError("Select a sending tool.");
       return;
     }
 
+    const selected = configuredProviders.find((item) => item.id === selectedProvider);
+    if (
+      selected &&
+      (selected.id === "ses" ||
+        selected.id === "brevo" ||
+        selected.id === "resend" ||
+        selected.id === "mailtrap") &&
+      selected.domain_capable === false
+    ) {
+      setError(
+        `${providerLabel(selectedProvider)} can send email but cannot manage domains with the current API key.`,
+      );
+      toast.error(
+        `Cannot add with ${providerLabel(selectedProvider)}`,
+        "Use a full-access API key, or pick another tool.",
+      );
+      return;
+    }
+
+    const existing = domains.find((domain) => domain.name === name);
+    const label = providerLabel(selectedProvider);
+
     setSaving(true);
     try {
-      const domain = await connectRemoteDomain(name);
+      let domain: ConsoleDomain;
+      if (existing) {
+        if (existing.sendingProviders.includes(selectedProvider)) {
+          setError(`${name} is already linked to ${label}. Open the domain to manage DNS.`);
+          return;
+        }
+        // Same domain, another tool: provision that tool's own DNS on the existing row.
+        domain = await updateDomainProviders(existing.id, [
+          ...existing.sendingProviders,
+          selectedProvider,
+        ]);
+        toast.success(
+          `${label} linked to ${name}`,
+          "Publish this tool's DNS records from the domain page.",
+        );
+      } else {
+        domain = await connectRemoteDomain(name, [selectedProvider]);
+        toast.success(
+          `${name} added`,
+          `Connected with ${label} — publish the DNS records shown next.`,
+        );
+      }
       setDomains((current) => [domain, ...current.filter((item) => item.id !== domain.id)]);
       closeModal();
-      navigate(`/console/domains/${domain.id}`);
+      navigate(`/console/domains/${domain.id}`, {
+        state: { openDnsTool: selectedProvider },
+      });
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "Could not connect the domain.");
+      const message =
+        reason instanceof Error ? reason.message : "Could not connect the domain.";
+      setError(message);
+      toast.error(`Could not link ${label}`, message);
     } finally {
       setSaving(false);
     }
@@ -110,13 +204,28 @@ export default function DomainsPanel() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-neutral-500">
-          A domain already verified in Amazon SES is linked as-is. Removing it here leaves the AWS identity in place.
+          Add a domain with SES, Resend, Brevo, or Mailtrap. Each tool keeps its own DNS to publish.
         </p>
         {loadError ? <p className="w-full text-sm text-red-600">{loadError}</p> : null}
-        <button type="button" onClick={openModal} className={BTN_PRIMARY}>
-          <Globe className="size-3.5" aria-hidden="true" />
-          Add domain
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className={BTN_GHOST}
+            disabled={syncing}
+            onClick={() => void reload({ silent: true })}
+            aria-label="Sync domains with sending tools"
+          >
+            <RefreshCw
+              className={`size-3.5 ${syncing ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+            {syncing ? "Syncing…" : "Sync"}
+          </button>
+          <button type="button" onClick={openModal} className={BTN_PRIMARY}>
+            <Globe className="size-3.5" aria-hidden="true" />
+            Add domain
+          </button>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-sm border border-neutral-200 bg-neutral-50">
@@ -146,7 +255,12 @@ export default function DomainsPanel() {
                       {domain.name}
                     </span>
                     <span className="mt-1 block font-mono text-[11px] text-neutral-400">
-                      DNS · {domain.provider} · DKIM {domain.dkimStatus}
+                      {domain.sendingProviders
+                        .filter((id) => configuredProviders.some((item) => item.id === id))
+                        .map((id) => providerLabel(id))
+                        .join(" · ") || "No linked tool"}
+                      {" · "}DNS {domain.provider}
+                      {" · "}DKIM {domain.dkimStatus}
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
@@ -189,7 +303,7 @@ export default function DomainsPanel() {
                       Add domain
                     </h2>
                     <p className="mt-1 text-sm text-neutral-500">
-                      DKIM, SPF and DMARC records are generated after creation.
+                      Choose one sending tool for this new domain.
                     </p>
                   </div>
                   <button
@@ -224,6 +338,46 @@ export default function DomainsPanel() {
                       className={FIELD_COMPACT}
                     />
                   </div>
+                  <div>
+                    <label
+                      htmlFor="add-domain-provider"
+                      className="mb-2 block font-mono text-[11px] tracking-widest text-neutral-400 uppercase"
+                    >
+                      Sending tool
+                    </label>
+                    {configuredProviders.length === 0 ? (
+                      <p className="rounded-sm border border-dashed border-neutral-200 bg-neutral-50 px-3 py-3 text-sm text-neutral-500">
+                        No sending tool is configured yet. Connect one in Providers first.
+                      </p>
+                    ) : (
+                      <div className="relative">
+                        <select
+                          id="add-domain-provider"
+                          value={selectedProvider}
+                          onChange={(event) => setSelectedProvider(event.target.value)}
+                          className={`${FIELD_COMPACT} appearance-none pr-10`}
+                        >
+                          {configuredProviders.map((provider) => (
+                            <option
+                              key={provider.id}
+                              value={provider.id}
+                              disabled={provider.domain_capable === false}
+                            >
+                              {toolOptionLabel(provider)}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-neutral-500"
+                          aria-hidden="true"
+                        />
+                      </div>
+                    )}
+                    <p className="mt-2 text-xs text-neutral-500">
+                      SES, Resend, Brevo and Mailtrap each return their own DNS to publish.
+                      If the domain already exists, this adds the tool without replacing others.
+                    </p>
+                  </div>
                   <p className="text-xs text-neutral-500">
                     DNS host (Cloudflare, OVH, Route 53…) is detected from the
                     nameservers. You do not choose it here.
@@ -248,7 +402,7 @@ export default function DomainsPanel() {
                       type="button"
                       className={BTN_PRIMARY}
                       onClick={() => void addDomain()}
-                      disabled={saving}
+                      disabled={saving || !selectedProvider}
                     >
                       <Globe className="size-3.5" aria-hidden="true" />
                       {saving ? "Connecting…" : "Add domain"}

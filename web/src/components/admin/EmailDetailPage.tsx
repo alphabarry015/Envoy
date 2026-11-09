@@ -3,9 +3,11 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 
 import { type ConsoleEmail, fetchEmail, formatSentAgo } from "../../lib/emails";
+import { onRealtime } from "../../lib/realtime";
 import { PageLoading } from "../ui/ScanLoading";
+import { providerLabel } from "../../lib/providerOptions";
 import { MailStatusBadge } from "./EmailsPanel";
-import { MethodBadge } from "./LogsPanel";
+import { MethodBadge, ProviderBadge } from "./LogsPanel";
 
 export default function EmailDetailPage() {
   const { emailId = "" } = useParams();
@@ -25,8 +27,17 @@ export default function EmailDetailPage() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    const unsubscribe = onRealtime(["emails.changed"], (message) => {
+      if (message.data.email_id && message.data.email_id !== emailId) return;
+      void fetchEmail(emailId)
+        .then((row) => {
+          if (!cancelled && row) setEmail(row);
+        })
+        .catch(() => undefined);
+    });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [emailId]);
 
@@ -60,7 +71,8 @@ export default function EmailDetailPage() {
               {email.subject}
             </h2>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <ProviderBadge provider={email.provider} />
             <MethodBadge method={email.method} />
             <MailStatusBadge status={email.status} />
           </div>
@@ -69,6 +81,7 @@ export default function EmailDetailPage() {
         <dl className="mt-6 grid gap-4 border-t border-neutral-200 pt-5 sm:grid-cols-2">
           <Meta label="From" value={email.from} />
           <Meta label="To" value={email.to} />
+          <Meta label="Tool" value={email.provider ? providerLabel(email.provider) : "—"} />
           <Meta label="Sent" value={formatSentAgo(email.sentAt)} />
           <Meta label="Status" value={email.status} />
         </dl>

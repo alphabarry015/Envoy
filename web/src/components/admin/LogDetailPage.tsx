@@ -8,7 +8,7 @@ hljs.registerLanguage("xml", xml);
 
 import { type ConsoleEmailLog, fetchLog } from "../../lib/emailLogs";
 import { PageLoading } from "../ui/ScanLoading";
-import { HttpStatus, MethodBadge, StatusBadge } from "./LogsPanel";
+import { HttpStatus, MethodBadge, ProviderBadge, StatusBadge } from "./LogsPanel";
 
 function formatWhen(iso: string | null) {
   if (!iso) return "—";
@@ -77,7 +77,8 @@ export default function LogDetailPage() {
               {log.subject}
             </h2>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <ProviderBadge provider={log.provider} />
             <MethodBadge method={log.method} />
             <HttpStatus code={log.httpStatus} />
             <StatusBadge status={log.status} />
@@ -107,7 +108,8 @@ export default function LogDetailPage() {
           <Meta label="To" value={log.to.join(", ")} />
           <Meta label="Cc" value={log.cc.length > 0 ? log.cc.join(", ") : "—"} />
           <Meta label="Bcc" value={log.bcc && log.bcc.length > 0 ? log.bcc.join(", ") : "—"} />
-          <Meta label="SES id" mono value={log.sesMessageId || "—"} />
+          <Meta label="Tool" value={<ProviderBadge provider={log.provider} />} />
+          <Meta label="Provider id" mono value={log.sesMessageId || "—"} />
           <Meta label="Method" value={<MethodBadge method={log.method} />} />
           <Meta label="HTTP" value={<HttpStatus code={log.httpStatus} />} />
           <Meta label="Domain" value={log.domain} />

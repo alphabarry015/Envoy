@@ -26,6 +26,8 @@ export type ConsoleEmailLog = {
   cc: string[];
   subject: string;
   status: EmailStatus;
+  /** Sending tool that handled this message (ses, resend, …). */
+  provider: string | null;
   /** HTTP status of the send request (200, 202, 403, 504, …). */
   httpStatus: number;
   /** HTTP method of the API call that produced this log. */
@@ -47,6 +49,7 @@ type LogPayload = {
   id: string;
   message_id: string;
   ses_message_id: string | null;
+  provider?: string | null;
   from_address: string;
   to_addresses: string[];
   cc_addresses: string[];
@@ -92,6 +95,7 @@ function fromPayload(row: LogPayload): ConsoleEmailLog {
     bcc: row.bcc_addresses ?? [],
     subject: row.subject,
     status: row.status,
+    provider: row.provider ?? null,
     httpStatus: httpStatusFor(row.status),
     method: "POST",
     domain,
@@ -137,6 +141,7 @@ export function filterLogs(
       log.subject,
       log.from,
       log.domain,
+      log.provider ?? "",
       log.apiKeyPrefix,
       String(log.httpStatus),
       log.method,

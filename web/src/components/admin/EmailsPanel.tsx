@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { FIELD } from "../../lib/consoleUi";
+import { onRealtime } from "../../lib/realtime";
 import { PageLoading } from "../ui/ScanLoading";
 import {
   type ConsoleEmail,
@@ -13,6 +14,7 @@ import {
   filterEmails,
   formatSentAgo,
 } from "../../lib/emails";
+import { ProviderBadge } from "./LogsPanel";
 const DIRECTIONS: Array<{ id: MailDirection; label: string }> = [
   { id: "all", label: "All" },
   { id: "sent", label: "Sent" },
@@ -32,20 +34,36 @@ export default function EmailsPanel() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchEmails()
-      .then((rows) => {
-        if (!cancelled) {
-          setEmails(rows.slice().sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()));
-        }
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setLoadError(cause instanceof Error ? cause.message : "Could not load emails.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    function load(silent: boolean) {
+      fetchEmails()
+        .then((rows) => {
+          if (!cancelled) {
+            setEmails(
+              rows
+                .slice()
+                .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()),
+            );
+          }
+        })
+        .catch((cause: unknown) => {
+          if (!cancelled && !silent) {
+            setLoadError(cause instanceof Error ? cause.message : "Could not load emails.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }
+    load(false);
+    let debounce: number | null = null;
+    const unsubscribe = onRealtime(["emails.changed", "realtime.ready"], () => {
+      if (debounce != null) window.clearTimeout(debounce);
+      debounce = window.setTimeout(() => load(true), 800);
+    });
     return () => {
       cancelled = true;
+      if (debounce != null) window.clearTimeout(debounce);
+      unsubscribe();
     };
   }, []);
 
@@ -136,16 +154,18 @@ export default function EmailsPanel() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-sm">
+            <table className="w-full min-w-[860px] table-fixed border-collapse text-left text-sm">
               <colgroup>
-                <col className="w-[28%]" />
-                <col className="w-[16%]" />
-                <col className="w-[38%]" />
+                <col className="w-[24%]" />
+                <col className="w-[14%]" />
+                <col className="w-[14%]" />
+                <col className="w-[30%]" />
                 <col className="w-[18%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-100/80 font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
                   <th className="px-5 py-2.5 font-medium">To</th>
+                  <th className="px-5 py-2.5 font-medium">Tool</th>
                   <th className="px-5 py-2.5 font-medium">Status</th>
                   <th className="px-5 py-2.5 font-medium">Subject</th>
                   <th className="px-5 py-2.5 font-medium">Sent</th>
@@ -159,6 +179,9 @@ export default function EmailsPanel() {
                     onClick={() => navigate(`/console/emails/${email.id}`)}
                   >
                     <td className="truncate px-5 py-4 text-neutral-800">{email.to}</td>
+                    <td className="px-5 py-4">
+                      <ProviderBadge provider={email.provider} />
+                    </td>
                     <td className="px-5 py-4">
                       <MailStatusBadge status={email.status} />
                     </td>

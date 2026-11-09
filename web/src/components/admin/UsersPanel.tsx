@@ -15,6 +15,9 @@ import {
   FIELD_COMPACT,
   PORTAL_SURFACE,
 } from "../../lib/consoleUi";
+import { PROVIDER_OPTIONS, type ProviderId } from "../../lib/providerOptions";
+import { fetchProviders } from "../../lib/providers";
+import { onRealtime } from "../../lib/realtime";
 import { PageLoading } from "../ui/ScanLoading";
 import {
   type ConsoleUser,
@@ -48,13 +51,14 @@ type FormState = {
   expiresInHours: 24 | 48;
   expiresOther: boolean;
   expiresDays: number;
+  provider: ProviderId;
 };
 
 type IssuedInvite = {
   email: string;
 };
 
-function emptyForm(): FormState {
+function emptyForm(provider: ProviderId = "ses"): FormState {
   return {
     name: "",
     email: "",
@@ -66,10 +70,11 @@ function emptyForm(): FormState {
     expiresInHours: 48,
     expiresOther: false,
     expiresDays: 7,
+    provider,
   };
 }
 
-function formFromUser(user: ConsoleUser): FormState {
+function formFromUser(user: ConsoleUser, provider: ProviderId = "ses"): FormState {
   return {
     name: user.name ?? "",
     email: user.email,
@@ -81,6 +86,7 @@ function formFromUser(user: ConsoleUser): FormState {
     expiresInHours: 48,
     expiresOther: false,
     expiresDays: 7,
+    provider,
   };
 }
 
@@ -106,7 +112,11 @@ export default function UsersPanel() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [issued, setIssued] = useState<IssuedInvite | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm);
+  const [connectedTools, setConnectedTools] = useState<ProviderId[]>(
+    PROVIDER_OPTIONS.map((item) => item.id),
+  );
+  const [defaultProvider, setDefaultProvider] = useState<ProviderId>("ses");
+  const [form, setForm] = useState<FormState>(() => emptyForm("ses"));
   const [error, setError] = useState<string | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(
@@ -121,7 +131,19 @@ export default function UsersPanel() {
   async function reload() {
     setLoadError(null);
     try {
-      setUsers(await fetchUsers());
+      const [nextUsers, providers] = await Promise.all([fetchUsers(), fetchProviders()]);
+      setUsers(nextUsers);
+      const ready = PROVIDER_OPTIONS.map((item) => item.id).filter((id) => {
+        const row = providers.items.find((item) => item.id === id);
+        return Boolean(row?.connected && row.enabled);
+      });
+      const tools = ready.length > 0 ? ready : (["ses"] as ProviderId[]);
+      setConnectedTools(tools);
+      const preferred =
+        (providers.effective_order.find((id) => tools.includes(id as ProviderId)) as
+          | ProviderId
+          | undefined) ?? tools[0];
+      setDefaultProvider(preferred);
     } catch (cause: unknown) {
       setLoadError(cause instanceof Error ? cause.message : "Could not load users.");
     } finally {
@@ -131,6 +153,9 @@ export default function UsersPanel() {
 
   useEffect(() => {
     void reload();
+    return onRealtime(["users.changed"], () => {
+      void reload();
+    });
   }, []);
 
   function closeMenu() {
@@ -158,12 +183,12 @@ export default function UsersPanel() {
     setEditingId(null);
     setIssued(null);
     setError(null);
-    setForm(emptyForm());
+    setForm(emptyForm(defaultProvider));
   }
 
   function openInvite() {
     closeMenu();
-    setForm(emptyForm());
+    setForm(emptyForm(defaultProvider));
     setEditingId(null);
     setIssued(null);
     setError(null);
@@ -172,7 +197,7 @@ export default function UsersPanel() {
 
   function openEdit(user: ConsoleUser) {
     closeMenu();
-    setForm(formFromUser(user));
+    setForm(formFromUser(user, defaultProvider));
     setEditingId(user.id);
     setIssued(null);
     setError(null);
@@ -230,6 +255,10 @@ export default function UsersPanel() {
       setError("Enter a valid work email.");
       return;
     }
+    if (!form.provider) {
+      setError("Choose a sending tool for the invite email.");
+      return;
+    }
     const days = Math.trunc(form.expiresDays);
     if (form.expiresOther && (!Number.isInteger(days) || days < 1 || days > 365)) {
       setError("Enter a number of days between 1 and 365.");
@@ -241,6 +270,7 @@ export default function UsersPanel() {
         ...form,
         name,
         email,
+        provider: form.provider,
         expiresInHours: form.expiresOther ? days * 24 : form.expiresInHours,
       });
       await reload();
@@ -541,6 +571,39 @@ export default function UsersPanel() {
                           ))}
                         </div>
                       </div>
+
+                      {!editing ? (
+                        <label className="block">
+                          <span className="mb-2 block font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
+                            Send invite with
+                          </span>
+                          <select
+                            value={form.provider}
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                provider: event.target.value as ProviderId,
+                              }))
+                            }
+                            className={SELECT}
+                            style={{ backgroundImage: SELECT_CHEVRON }}
+                          >
+                            {PROVIDER_OPTIONS.map((tool) => {
+                              const ready = connectedTools.includes(tool.id);
+                              return (
+                                <option key={tool.id} value={tool.id} disabled={!ready}>
+                                  {tool.label}
+                                  {ready ? "" : " (not connected)"}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <span className="mt-2 block text-xs text-neutral-500">
+                            Delivery tool for the activation email. The platform from-domain
+                            must be verified on the chosen tool.
+                          </span>
+                        </label>
+                      ) : null}
 
                       <div className="grid gap-4 sm:grid-cols-2">
                         <QuotaSelect

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -12,9 +12,11 @@ from app.core.database import SessionLocal
 from app.models.domain import Domain, DomainStatus
 from app.models.email_log import EmailLog, EmailStatus
 from app.models.suppression import Suppression
-from app.models.user import ApiKey, User
+from app.models.user import ApiKey, User  # ApiKey used for preferred_provider lookup
+from app.providers import EmailProviderError
+from app.services.realtime import publish as realtime_publish
+from app.providers.factory import get_email_router_async
 from app.schemas.email import EmailSendRequest
-from app.services.aws_ses import SESClientError, get_ses_service
 from app.services.webhooks import deliver_user_event
 
 _UNCOUNTED = (EmailStatus.FAILED, EmailStatus.SUPPRESSED)
@@ -54,8 +56,12 @@ async def accept_send(db: AsyncSession, api_key: ApiKey, payload: EmailSendReque
     if domain is None and not payload.reply_to:
         payload.reply_to = [user.email]
     recipients = _recipients(payload)
-    suppressed = await _suppressed(db, recipients)
+    suppressed = await _suppressed(db, recipients, user.id)
     if not suppressed:
+        # Serialize count-then-insert per account so parallel sends cannot overshoot quotas.
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": f"send:{user.id}"}
+        )
         await _enforce_quota(db, user, api_key)
 
     now = datetime.now(timezone.utc)
@@ -106,13 +112,23 @@ async def accept_send(db: AsyncSession, api_key: ApiKey, payload: EmailSendReque
 
 
 async def perform_ses_send(log_id: UUID, payload: EmailSendRequest) -> EmailStatus | None:
-    """Expédie un envoi live et notifie le webhook du compte."""
+    """Compat : délègue à perform_provider_send."""
+    return await perform_provider_send(log_id, payload)
+
+
+async def perform_provider_send(log_id: UUID, payload: EmailSendRequest) -> EmailStatus | None:
+    """Expédie un envoi live via le router multi-provider et notifie le webhook du compte."""
     async with SessionLocal() as db:
         log = await db.get(EmailLog, log_id)
         if log is None or log.status != EmailStatus.QUEUED:
             return None
+        preferred = None
+        if log.api_key_id is not None:
+            api_key = await db.get(ApiKey, log.api_key_id)
+            preferred = api_key.preferred_provider if api_key is not None else None
+        router = await get_email_router_async(db, preferred_provider=preferred)
         try:
-            ses_message_id = await get_ses_service().send_email_async(
+            result = await router.send(
                 from_address=log.from_address,
                 to_addresses=list(payload.to),
                 subject=payload.subject,
@@ -123,28 +139,36 @@ async def perform_ses_send(log_id: UUID, payload: EmailSendRequest) -> EmailStat
                 reply_to=list(payload.reply_to) if payload.reply_to else None,
                 attachments=payload.attachments,
             )
-        except SESClientError as exc:
+        except EmailProviderError as exc:
             log.status = EmailStatus.FAILED
             log.error_message = str(exc)[:1000]
+            log.provider = exc.provider if exc.provider != "router" else log.provider
             await db.commit()
-            await deliver_user_event(
-                db,
-                log.user_id,
-                "email.failed",
-                {"email_id": str(log.id), "message_id": log.message_id, "ses_message_id": None},
-            )
+            failed_payload = {
+                "email_id": str(log.id),
+                "message_id": log.message_id,
+                "provider": log.provider,
+                "ses_message_id": None,
+            }
+            await deliver_user_event(db, log.user_id, "email.failed", failed_payload)
+            await realtime_publish(log.user_id, "email.failed", failed_payload)
+            await realtime_publish(log.user_id, "emails.changed", failed_payload)
             return EmailStatus.FAILED
 
-        log.ses_message_id = ses_message_id[:128]
+        log.provider = result.provider
+        log.ses_message_id = result.message_id[:128]
         log.status = EmailStatus.SENT
         log.sent_at = datetime.now(timezone.utc)
         await db.commit()
-        await deliver_user_event(
-            db,
-            log.user_id,
-            "email.sent",
-            {"email_id": str(log.id), "message_id": log.message_id, "ses_message_id": log.ses_message_id},
-        )
+        sent_payload = {
+            "email_id": str(log.id),
+            "message_id": log.message_id,
+            "provider": log.provider,
+            "ses_message_id": log.ses_message_id,
+        }
+        await deliver_user_event(db, log.user_id, "email.sent", sent_payload)
+        await realtime_publish(log.user_id, "email.sent", sent_payload)
+        await realtime_publish(log.user_id, "emails.changed", sent_payload)
         return EmailStatus.SENT
 
 
@@ -188,10 +212,16 @@ async def _verified_domain(db: AsyncSession, user_id: UUID, email: str) -> Domai
     return match
 
 
-async def _suppressed(db: AsyncSession, recipients: list[str]) -> list[str]:
+async def _suppressed(db: AsyncSession, recipients: list[str], user_id: UUID) -> list[str]:
+    """Bounces and complaints apply platform-wide; manual entries only for their owner."""
     if not recipients:
         return []
-    result = await db.execute(select(Suppression.email).where(Suppression.email.in_(recipients)))
+    result = await db.execute(
+        select(Suppression.email).where(
+            Suppression.email.in_(recipients),
+            or_(Suppression.source != "manual", Suppression.user_id == user_id),
+        )
+    )
     blocked = {email.lower() for email in result.scalars().all()}
     return [email for email in recipients if email in blocked]
 

@@ -11,6 +11,7 @@ class OverviewActivity(BaseModel):
     message_id: str
     subject: str
     status: str
+    provider: str | None = None
     created_at: datetime
 
 

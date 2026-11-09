@@ -1,5 +1,6 @@
 import { apiBase as apiUrl } from "./apiBase";
 import { authHeader } from "./auth";
+import type { ProviderId } from "./providerOptions";
 
 export type UserRole = "admin" | "member";
 export type UserStatus = "active" | "pending" | "suspended";
@@ -30,6 +31,8 @@ export type InviteDraft = {
   monthlyQuota: number | null;
   apiKeysEnabled: boolean;
   expiresInHours: number;
+  /** Tool that delivers the invite email. */
+  provider: ProviderId;
 };
 
 type ApiUser = {
@@ -106,6 +109,7 @@ export async function sendInvite(input: InviteDraft): Promise<{ email: string }>
       monthly_send_quota: input.monthlyQuota,
       can_create_api_keys: input.apiKeysEnabled,
       invite_expires_hours: input.expiresInHours,
+      provider: input.provider,
     }),
   });
   if (!response.ok) throw new Error(await readApiError(response, "Could not send the invite."));

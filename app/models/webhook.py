@@ -34,6 +34,8 @@ class Webhook(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
     events: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    # None / [] = tous les transports. Sinon filtre sur email_logs.provider.
+    providers: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     secret_prefix: Mapped[str] = mapped_column(String(32), nullable=False)
     hashed_secret: Mapped[str] = mapped_column(String(64), nullable=False)
     encrypted_secret: Mapped[str | None] = mapped_column(Text, nullable=True)

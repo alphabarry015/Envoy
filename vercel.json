@@ -9,6 +9,17 @@
       ],
       "headers": [
         {
+          "source": "/(.*)",
+          "headers": [
+            { "key": "X-Content-Type-Options", "value": "nosniff" },
+            { "key": "X-Frame-Options", "value": "DENY" },
+            { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+            { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains" },
+            { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=()" },
+            { "key": "Content-Security-Policy", "value": "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'" }
+          ]
+        },
+        {
           "source": "/assets/(.*)",
           "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
         },
@@ -28,7 +39,8 @@
       "entrypoint": "app.main:app",
       "functions": {
         "app/main.py": {
-          "maxDuration": 60
+          "maxDuration": 60,
+          "excludeFiles": "{web/**,docs/**,tests/**,**/*_test.py,**/__pycache__/**}"
         }
       }
     }
@@ -37,8 +49,6 @@
     { "source": "/api/(.*)", "destination": { "service": "app" } },
     { "source": "/health", "destination": { "service": "app" } },
     { "source": "/ready", "destination": { "service": "app" } },
-    { "source": "/openapi.json", "destination": { "service": "app" } },
-    { "source": "/redoc", "destination": { "service": "app" } },
     { "source": "/(.*)", "destination": { "service": "web" } }
   ]
 }

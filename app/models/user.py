@@ -127,6 +127,7 @@ class ApiKey(Base):
     )
     daily_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
     monthly_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    preferred_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

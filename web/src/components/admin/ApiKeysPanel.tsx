@@ -30,6 +30,7 @@ import {
   FIELD_COMPACT,
   PORTAL_SURFACE,
 } from "../../lib/consoleUi";
+import { PROVIDER_OPTIONS, providerLabel } from "../../lib/providerOptions";
 import { PageLoading } from "../ui/ScanLoading";
 import { useConsoleAccount } from "./consoleAccount";
 
@@ -64,6 +65,7 @@ function resetFormDefaults() {
     scopes: ["send"] as ApiKeyScope[],
     dailyQuota: 5_000 as number | null,
     monthlyQuota: 100_000 as number | null,
+    preferredProvider: "" as string,
   };
 }
 
@@ -213,6 +215,7 @@ export default function ApiKeysPanel() {
         scopes: form.scopes,
         dailyQuota: isAdmin ? form.dailyQuota : null,
         monthlyQuota: isAdmin ? form.monthlyQuota : null,
+        preferredProvider: form.preferredProvider || null,
       });
       setKeys((current) => [toStoredView(key), ...current]);
       setForm(resetFormDefaults());
@@ -306,6 +309,7 @@ export default function ApiKeysPanel() {
                   <th className="px-5 py-2.5 font-medium">Key</th>
                   <th className="px-5 py-2.5 font-medium">Mode</th>
                   <th className="px-5 py-2.5 font-medium">Permissions</th>
+                  <th className="px-5 py-2.5 font-medium">Provider</th>
                   <th className="px-5 py-2.5 font-medium">Quotas</th>
                   <th className="px-5 py-2.5 font-medium">Status</th>
                   <th className="px-5 py-2.5 font-medium">Created</th>
@@ -359,6 +363,9 @@ export default function ApiKeysPanel() {
                     </td>
                     <td className="px-5 py-4 font-mono text-[11px] text-neutral-500">
                       {key.scopes.join(" · ")}
+                    </td>
+                    <td className="px-5 py-4 font-mono text-[11px] text-neutral-500">
+                      {providerLabel(key.preferredProvider)}
                     </td>
                     <td className="px-5 py-4 font-mono text-[11px] text-neutral-500">
                       {formatQuota(key.dailyQuota)}/d ·{" "}
@@ -507,6 +514,37 @@ export default function ApiKeysPanel() {
                           placeholder="Production"
                           className={FIELD_COMPACT}
                         />
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="api-key-provider"
+                          className="mb-2 block font-mono text-[11px] tracking-widest text-neutral-400 uppercase"
+                        >
+                          Provider
+                        </label>
+                        <select
+                          id="api-key-provider"
+                          value={form.preferredProvider}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              preferredProvider: event.target.value,
+                            }))
+                          }
+                          className={SELECT}
+                          style={{ backgroundImage: SELECT_CHEVRON }}
+                        >
+                          <option value="">Auto (SES first, then failover)</option>
+                          {PROVIDER_OPTIONS.map((provider) => (
+                            <option key={provider.id} value={provider.id}>
+                              {provider.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-2 text-xs text-neutral-500">
+                          Preferred transport for sends with this key. Failover still applies if it fails.
+                        </p>
                       </div>
 
                       <fieldset>

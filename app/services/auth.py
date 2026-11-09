@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 from datetime import datetime, timedelta, timezone
@@ -20,7 +21,10 @@ from app.core.security import (
 from app.models.suppression import Suppression
 from app.models.user import User, UserRole, UserStatus
 from app.sql_files import read_sql
-from app.services.aws_ses import SESClientError, get_ses_service
+from app.providers import EmailProviderError
+from app.providers.factory import build_provider_map
+from app.providers.router import EmailRouter
+from app.services.realtime import publish as realtime_publish
 from app.schemas.user import (
     AcceptInviteRequest,
     InviteCreatedResponse,
@@ -28,6 +32,13 @@ from app.schemas.user import (
     PasswordChangeRequest,
     UserUpdateRequest,
 )
+
+_PROVIDER_LABELS = {
+    "ses": "Amazon SES",
+    "resend": "Resend",
+    "brevo": "Brevo",
+    "mailtrap": "Mailtrap",
+}
 
 
 class AuthError(Exception):
@@ -82,10 +93,20 @@ def _dummy_hash() -> str:
     return _dummy_password_hash
 
 
+async def _verify(password: str, hashed: str) -> bool:
+    return await asyncio.to_thread(verify_password, password, hashed)
+
+
+async def _hash(password: str) -> str:
+    return await asyncio.to_thread(hash_password, password)
+
+
 async def authenticate(db: AsyncSession, email: str, password: str) -> User:
     user = await _user_by_email(db, email)
     hashed = user.hashed_password if user else None
-    password_ok = verify_password(password, hashed or _dummy_hash())
+    if not hashed:
+        await asyncio.to_thread(_dummy_hash)
+    password_ok = await _verify(password, hashed or _dummy_hash())
     if user is None or not hashed or not password_ok or not user.is_active:
         raise AuthError(401, "Invalid email or password.")
     return user
@@ -151,16 +172,33 @@ async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest)
     await db.refresh(user)
     link = _activation_link(raw_token)
     text_body, html_body = _invite_bodies(link, expires)
+    tool = payload.provider.strip().lower()
+    providers = build_provider_map()
+    chosen = providers.get(tool)
+    label = _PROVIDER_LABELS.get(tool, tool)
+    if chosen is None or not chosen.is_configured():
+        raise AuthError(
+            400,
+            f"{label} is not connected. Configure its API credentials before sending invites with it.",
+        )
     try:
-        await get_ses_service().send_email_async(
+        await EmailRouter([chosen]).send(
             from_address=f"Envoy <{settings.platform_mail_from}>",
             to_addresses=[user.email],
             subject="Activate your Envoy account",
             html=html_body,
             text=text_body,
         )
-    except SESClientError as exc:
-        raise AuthError(502, "The invitation was saved, but the activation email could not be sent.") from exc
+    except EmailProviderError as exc:
+        raise AuthError(
+            502,
+            f"The invitation was saved, but {label} could not send the activation email.",
+        ) from exc
+    await realtime_publish(
+        actor.id,
+        "users.changed",
+        {"email": user.email, "reason": "invite_sent", "provider": tool},
+    )
     return InviteCreatedResponse(email=user.email, invite_token=raw_token, expires_at=expires)
 
 
@@ -180,7 +218,7 @@ async def accept_invite(db: AsyncSession, payload: AcceptInviteRequest) -> User:
     if not valid or user is None:
         raise AuthError(400, "Invite token is invalid or expired.")
 
-    user.hashed_password = hash_password(payload.password)
+    user.hashed_password = await _hash(payload.password)
     user.invite_token = None
     user.invite_token_expires_at = None
     user.status = UserStatus.ACTIVE
@@ -251,9 +289,9 @@ async def revoke_invite(db: AsyncSession, actor: User, user_id: UUID) -> None:
 async def change_password(db: AsyncSession, user: User, payload: PasswordChangeRequest) -> None:
     """Remplace le mot de passe après vérification de l'actuel."""
     hashed = user.hashed_password
-    if not hashed or not verify_password(payload.current_password, hashed):
+    if not hashed or not await _verify(payload.current_password, hashed):
         raise AuthError(400, "Current password is incorrect.")
-    user.hashed_password = hash_password(payload.new_password)
+    user.hashed_password = await _hash(payload.new_password)
     await _mirror_auth_user(db, user)
     await db.commit()
 
@@ -272,12 +310,15 @@ async def ensure_bootstrap_admin(db: AsyncSession) -> None:
         return
     existing = await _user_by_email(db, email)
     if existing:
-        await _mirror_auth_user(db, existing)
-        await db.commit()
+        # BOOTSTRAP_ADMIN_PASSWORD is the source of truth for this account.
+        if not existing.hashed_password or not await _verify(password, existing.hashed_password):
+            existing.hashed_password = await _hash(password)
+            await _mirror_auth_user(db, existing)
+            await db.commit()
         return
     admin = User(
         email=email.lower(),
-        hashed_password=hash_password(password),
+        hashed_password=await _hash(password),
         role=UserRole.ADMIN,
         status=UserStatus.ACTIVE,
         can_create_api_keys=True,

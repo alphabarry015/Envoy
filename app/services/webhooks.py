@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -17,6 +18,9 @@ from app.core.config import get_settings
 from app.models.user import User
 from app.models.webhook import Webhook
 from app.schemas.webhook import WebhookCreatedResponse, WebhookResponse, WebhookWrite
+from app.services.url_guard import UnsafeUrlError, assert_public_destination
+
+MAX_WEBHOOKS_PER_USER = 10
 
 
 class WebhookError(Exception):
@@ -58,6 +62,9 @@ async def list_webhooks(db: AsyncSession, user: User) -> list[Webhook]:
 
 
 async def create_webhook(db: AsyncSession, user: User, payload: WebhookWrite) -> WebhookCreatedResponse:
+    count = await db.scalar(select(func.count()).select_from(Webhook).where(Webhook.user_id == user.id))
+    if (count or 0) >= MAX_WEBHOOKS_PER_USER:
+        raise WebhookError(422, f"You can register up to {MAX_WEBHOOKS_PER_USER} endpoints.")
     await _ensure_unique_url(db, user, payload.url)
     raw, digest, prefix = _new_secret()
     record = Webhook(
@@ -65,6 +72,7 @@ async def create_webhook(db: AsyncSession, user: User, payload: WebhookWrite) ->
         name=payload.name.strip(),
         url=payload.url,
         events=list(payload.events),
+        providers=list(payload.providers) if payload.providers else None,
         secret_prefix=prefix,
         hashed_secret=digest,
         encrypted_secret=seal_secret(raw),
@@ -88,6 +96,7 @@ async def update_webhook(
     record.name = payload.name.strip()
     record.url = payload.url
     record.events = list(payload.events)
+    record.providers = list(payload.providers) if payload.providers else None
     record.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(record)
@@ -158,23 +167,40 @@ async def deliver_user_event(
         select(Webhook).where(Webhook.user_id == user_id, Webhook.is_active.is_(True))
     )
     body = json.dumps({"type": event, "data": data}, separators=(",", ":"))
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        for record in result.scalars().all():
-            if event not in (record.events or []):
-                continue
-            secret = open_secret(record.encrypted_secret)
-            if secret is None:
-                continue
-            signature = hmac.new(secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
-            try:
-                await client.post(
-                    record.url,
-                    content=body,
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-Envoy-Event": event,
-                        "X-Envoy-Signature": signature,
-                    },
-                )
-            except httpx.HTTPError:
-                continue
+    event_provider = data.get("provider")
+    targets: list[tuple[str, str]] = []
+    for record in result.scalars().all():
+        if event not in (record.events or []):
+            continue
+        allowed_providers = record.providers or []
+        if allowed_providers and event_provider and event_provider not in allowed_providers:
+            continue
+        if allowed_providers and not event_provider:
+            continue
+        secret = open_secret(record.encrypted_secret)
+        if secret is None:
+            continue
+        signature = hmac.new(secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+        targets.append((record.url, signature))
+    if not targets:
+        return
+
+    async def post(client: httpx.AsyncClient, url: str, signature: str) -> None:
+        try:
+            await assert_public_destination(url)
+            await client.post(
+                url,
+                content=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Envoy-Event": event,
+                    "X-Envoy-Signature": signature,
+                },
+            )
+        except (httpx.HTTPError, UnsafeUrlError):
+            return
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(4.0, connect=2.0), follow_redirects=False
+    ) as client:
+        await asyncio.gather(*(post(client, url, signature) for url, signature in targets))

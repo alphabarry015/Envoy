@@ -2,12 +2,16 @@ import { apiBase as apiUrl } from "./apiBase";
 import { authHeader } from "./auth";
 
 export type DnsRecord = {
-  type: "CNAME" | "TXT";
+  type: "CNAME" | "TXT" | "MX";
   name: string;
   value: string;
   ttl: number;
-  purpose: "DKIM" | "SPF" | "DMARC";
+  purpose: "DKIM" | "SPF" | "DMARC" | "BREVO" | "MAILTRAP" | "MX" | string;
   status: "pending" | "verified";
+  /** Sending tool that owns this record. */
+  source?: "ses" | "brevo" | "resend" | "mailtrap" | string;
+  /** MX priority when type is MX. */
+  priority?: number | null;
 };
 
 export type DomainStatus = "pending" | "verified" | "failed";
@@ -25,12 +29,16 @@ export type ConsoleDomain = {
   dkimStatus: DkimStatus;
   /** DNS host / registrar where DKIM·SPF·DMARC records are (or will be) published. */
   provider: string;
+  /** Email tools where this domain is registered (SES, Resend, …). */
+  sendingProviders: string[];
   /** SES sending region — set by backend later. */
   region: string;
   dnsRecords: DnsRecord[];
   createdAt: string;
   verifiedAt: string | null;
   mailFrom?: string;
+  /** Backend warnings when a tool could not sync DNS. */
+  toolWarnings?: string[];
 };
 
 export const DOMAIN_PATTERN =
@@ -121,7 +129,7 @@ export function buildDnsRecords(domain: string): DnsRecord[] {
   ];
 }
 
-export function createDomain(name: string): ConsoleDomain {
+export function createDomain(name: string, sendingProviders: string[] = ["ses"]): ConsoleDomain {
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
@@ -129,6 +137,7 @@ export function createDomain(name: string): ConsoleDomain {
     status: "pending",
     dkimStatus: "PENDING",
     provider: detectDnsProvider(name),
+    sendingProviders,
     region: "us-east-1",
     dnsRecords: buildDnsRecords(name),
     createdAt: now,
@@ -165,12 +174,14 @@ type DomainPayload = {
   name: string;
   status: DomainStatus;
   dkim_status: DkimStatus;
+  providers?: string[];
   dns_records: DnsRecord[];
   created_at: string;
   verified_at: string | null;
   region?: string;
   nameservers?: string[];
   mail_from?: string;
+  tool_warnings?: string[];
 };
 
 async function readError(response: Response): Promise<string> {
@@ -183,6 +194,27 @@ async function readError(response: Response): Promise<string> {
   return "Domain request failed.";
 }
 
+export function dnsRecordsForTool(
+  records: DnsRecord[],
+  toolId: string,
+): DnsRecord[] {
+  const source = toolId.toLowerCase();
+  // Strict: only this tool's tagged records (never mix other tools).
+  const tagged = records.filter(
+    (record) => (record.source || "").toLowerCase() === source,
+  );
+  if (tagged.length > 0) return tagged;
+  // Legacy untagged rows only for SES, and only when no other sources exist.
+  if (source === "ses") {
+    const hasOtherSources = records.some((record) =>
+      Boolean(record.source && record.source.toLowerCase() !== "ses"),
+    );
+    if (hasOtherSources) return [];
+    return records.filter((record) => !record.source);
+  }
+  return [];
+}
+
 function fromPayload(row: DomainPayload): ConsoleDomain {
   return {
     id: row.id,
@@ -190,11 +222,13 @@ function fromPayload(row: DomainPayload): ConsoleDomain {
     status: row.status,
     dkimStatus: row.dkim_status,
     provider: detectDnsProvider(row.name, row.nameservers),
+    sendingProviders: Array.isArray(row.providers) && row.providers.length > 0 ? row.providers : ["ses"],
     region: row.region || "us-east-2",
     dnsRecords: Array.isArray(row.dns_records) ? row.dns_records : [],
     createdAt: row.created_at,
     verifiedAt: row.verified_at,
     mailFrom: row.mail_from || `noreply@${row.name}`,
+    toolWarnings: Array.isArray(row.tool_warnings) ? row.tool_warnings : [],
   };
 }
 
@@ -214,12 +248,29 @@ export async function fetchDomain(id: string): Promise<ConsoleDomain | null> {
   return fromPayload((await response.json()) as DomainPayload);
 }
 
-export async function connectRemoteDomain(name: string): Promise<ConsoleDomain> {
+export async function connectRemoteDomain(
+  name: string,
+  providers: string[] = ["ses"],
+): Promise<ConsoleDomain> {
   const baseUrl = apiUrl();
   const response = await fetch(`${baseUrl}/api/v1/domains`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeader() },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, providers }),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return fromPayload((await response.json()) as DomainPayload);
+}
+
+export async function updateDomainProviders(
+  id: string,
+  providers: string[],
+): Promise<ConsoleDomain> {
+  const baseUrl = apiUrl();
+  const response = await fetch(`${baseUrl}/api/v1/domains/${id}/providers`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ providers }),
   });
   if (!response.ok) throw new Error(await readError(response));
   return fromPayload((await response.json()) as DomainPayload);

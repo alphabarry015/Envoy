@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.domain import DomainCreate, DomainListResponse, DomainResponse, DomainVerifyResponse
+from app.schemas.domain import (
+    DomainCreate,
+    DomainListResponse,
+    DomainProvidersUpdate,
+    DomainResponse,
+    DomainVerifyResponse,
+)
 from app.services.aws_ses import SESService, get_ses_service
 from app.services.domains import (
     DomainError,
@@ -17,6 +23,7 @@ from app.services.domains import (
     get_domain,
     list_domains,
     refresh_domain,
+    update_domain_providers,
 )
 
 router = APIRouter()
@@ -48,9 +55,27 @@ async def create_domain(
     user: User = Depends(get_current_user),
     ses: SESService = Depends(get_ses_service),
 ) -> DomainResponse:
-    """Relie un domaine déjà présent dans SES, ou le crée s'il n'existe pas."""
+    """Relie un domaine aux outils choisis (SES / Brevo provisionnent l'identité)."""
     try:
-        return await connect_domain(db, user, payload.name, ses)
+        return await connect_domain(db, user, payload.name, ses, providers=payload.providers)
+    except DomainError as exc:
+        raise _error(exc) from exc
+
+
+@router.patch(
+    "/{domain_id}/providers",
+    response_model=DomainResponse,
+    summary="Mettre à jour les outils d'envoi d'un domaine",
+)
+async def patch_domain_providers(
+    domain_id: UUID,
+    payload: DomainProvidersUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    ses: SESService = Depends(get_ses_service),
+) -> DomainResponse:
+    try:
+        return await update_domain_providers(db, user, domain_id, payload.providers, ses)
     except DomainError as exc:
         raise _error(exc) from exc
 
@@ -71,7 +96,7 @@ async def read_domain(
 @router.get(
     "/{domain_id}/verify",
     response_model=DomainVerifyResponse,
-    summary="Vérifier le statut DKIM auprès d'AWS SES",
+    summary="Vérifier le statut DKIM / authentification auprès du transport",
 )
 async def verify_domain(
     domain_id: UUID,

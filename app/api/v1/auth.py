@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_admin, get_current_user
@@ -29,6 +29,7 @@ from app.services.auth import (
     revoke_invite,
     update_user,
 )
+from app.services import throttle
 
 router = APIRouter()
 
@@ -37,12 +38,30 @@ def _auth_error(exc: AuthError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.detail)
 
 
+_TOO_MANY = HTTPException(
+    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+    detail="Too many attempts. Try again in a few minutes.",
+)
+
+
 @router.post("/login", response_model=TokenResponse, summary="Connexion console")
-async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def login(
+    payload: LoginRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    keys = throttle.keys_for("login", throttle.client_ip(request), str(payload.email))
+    try:
+        await throttle.ensure_allowed(db, keys)
+    except throttle.ThrottledError:
+        raise _TOO_MANY from None
     try:
         user = await authenticate(db, str(payload.email), payload.password)
     except AuthError as exc:
+        if exc.status_code == 401:
+            await throttle.record_failure(db, keys)
         raise _auth_error(exc) from exc
+    await throttle.clear(db, keys)
     return TokenResponse(access_token=issue_token(user), user=UserResponse.model_validate(user))
 
 
@@ -56,7 +75,7 @@ async def users(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(get_current_admin),
 ) -> list[User]:
-        return await list_users(db, _admin)
+    return await list_users(db, _admin)
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse, summary="Mettre à jour un compte")
@@ -114,9 +133,20 @@ async def invite(
 
 
 @router.post("/accept-invite", response_model=TokenResponse, summary="Activer un compte invité")
-async def accept(payload: AcceptInviteRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def accept(
+    payload: AcceptInviteRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    keys = throttle.keys_for("invite", throttle.client_ip(request))
+    try:
+        await throttle.ensure_allowed(db, keys)
+    except throttle.ThrottledError:
+        raise _TOO_MANY from None
     try:
         user = await accept_invite(db, payload)
     except AuthError as exc:
+        if exc.status_code == 400:
+            await throttle.record_failure(db, keys)
         raise _auth_error(exc) from exc
     return TokenResponse(access_token=issue_token(user), user=UserResponse.model_validate(user))

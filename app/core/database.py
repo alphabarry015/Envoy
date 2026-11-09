@@ -23,7 +23,8 @@ _pool_args: dict[str, object] = (
 
 engine = create_async_engine(
     settings.sqlalchemy_database_uri,
-    echo=settings.debug,
+    # SQL echo logs bound parameters (password hashes, tokens): development only.
+    echo=settings.debug and settings.is_development,
     connect_args=_connect_args,
     **_pool_args,
 )

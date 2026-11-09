@@ -1,0 +1,2 @@
+ALTER TABLE public.provider_settings NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.provider_settings DISABLE ROW LEVEL SECURITY

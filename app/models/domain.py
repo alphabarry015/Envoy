@@ -48,6 +48,13 @@ class Domain(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    # Outils d'envoi où ce domaine est déclaré (SES, Resend, Brevo, Mailtrap…).
+    providers: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=lambda: ["ses"],
+        server_default=text("'[\"ses\"]'::jsonb"),
+    )
     status: Mapped[DomainStatus] = mapped_column(
         Enum(
             DomainStatus,

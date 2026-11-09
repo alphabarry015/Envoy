@@ -54,6 +54,7 @@ async def create_api_key(db: AsyncSession, user: User, payload: ApiKeyCreate) ->
         scopes=list(payload.scopes),
         daily_quota=daily_quota,
         monthly_quota=monthly_quota,
+        preferred_provider=payload.preferred_provider,
         is_active=True,
     )
     db.add(record)

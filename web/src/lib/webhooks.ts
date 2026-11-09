@@ -18,6 +18,8 @@ export type ConsoleWebhook = {
   name: string;
   url: string;
   events: WebhookEvent[];
+  /** Null/empty = all providers. */
+  providers: string[] | null;
   /** Signing secret — only present right after creation or rotation. */
   secret?: string;
   /** Visible prefix stored permanently, e.g. whsec_7kQe2m… */
@@ -31,12 +33,14 @@ export type CreateWebhookInput = {
   name: string;
   url: string;
   events: WebhookEvent[];
+  providers?: string[] | null;
 };
 
 export type UpdateWebhookInput = {
   name: string;
   url: string;
   events: WebhookEvent[];
+  providers?: string[] | null;
 };
 
 const EVENT_IDS = new Set<string>(WEBHOOK_EVENTS.map((event) => event.id));
@@ -94,6 +98,7 @@ type WebhookPayload = {
   name: string;
   url: string;
   events: WebhookEvent[];
+  providers?: string[] | null;
   secret_prefix: string;
   is_active: boolean;
   created_at: string;
@@ -117,6 +122,7 @@ function fromPayload(row: WebhookPayload): ConsoleWebhook {
     name: row.name,
     url: row.url,
     events: knownEvents(row.events),
+    providers: row.providers?.length ? row.providers : null,
     secret: row.secret,
     prefix: row.secret_prefix,
     status: row.is_active ? "active" : "disabled",
@@ -143,7 +149,12 @@ export async function fetchWebhooks(): Promise<ConsoleWebhook[]> {
 export async function createRemoteWebhook(input: CreateWebhookInput): Promise<ConsoleWebhook> {
   const response = await webhookRequest("", {
     method: "POST",
-    body: JSON.stringify({ name: input.name, url: input.url, events: input.events }),
+    body: JSON.stringify({
+      name: input.name,
+      url: input.url,
+      events: input.events,
+      providers: input.providers ?? null,
+    }),
   });
   if (!response.ok) throw new Error(await readError(response));
   return fromPayload((await response.json()) as WebhookPayload);
@@ -152,7 +163,12 @@ export async function createRemoteWebhook(input: CreateWebhookInput): Promise<Co
 export async function updateRemoteWebhook(id: string, input: UpdateWebhookInput): Promise<ConsoleWebhook> {
   const response = await webhookRequest(`/${id}`, {
     method: "PATCH",
-    body: JSON.stringify({ name: input.name, url: input.url, events: input.events }),
+    body: JSON.stringify({
+      name: input.name,
+      url: input.url,
+      events: input.events,
+      providers: input.providers ?? null,
+    }),
   });
   if (!response.ok) throw new Error(await readError(response));
   return fromPayload((await response.json()) as WebhookPayload);
@@ -186,6 +202,7 @@ export function createWebhook(input: CreateWebhookInput): ConsoleWebhook {
     name: input.name.trim() || "Untitled webhook",
     url: normalizeWebhookUrl(input.url) ?? input.url.trim(),
     events: input.events.length > 0 ? [...input.events] : [...DEFAULT_EVENTS],
+    providers: input.providers ?? null,
     secret,
     prefix: toPrefix(secret),
     status: "active",

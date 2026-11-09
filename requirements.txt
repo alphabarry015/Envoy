@@ -19,6 +19,9 @@ greenlet==3.5.6
 # AWS SES v2
 boto3==1.43.124
 
+# Live DNS verification
+dnspython==2.8.0
+
 # Security
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
