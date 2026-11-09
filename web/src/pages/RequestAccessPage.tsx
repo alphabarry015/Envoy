@@ -147,7 +147,7 @@ export default function RequestAccessPage() {
                 <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-white/80">
                   The request for {form.organization || "your organization"} will
                   be reviewed. If it is accepted, an invitation is sent to{" "}
-                  {form.email}.
+                  {form.email}. There is no need to send it again.
                 </p>
                 <Link
                   to="/"

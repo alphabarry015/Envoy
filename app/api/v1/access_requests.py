@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
-from sqlalchemy import case, select
+from sqlalchemy import case, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_admin
@@ -26,6 +27,7 @@ router = APIRouter()
 logger = logging.getLogger("envoy.access_requests")
 
 EVENT = "access_requests.changed"
+DECLINE_COOLDOWN = timedelta(days=30)
 
 
 class AccessRequestIn(BaseModel):
@@ -80,6 +82,22 @@ async def _notify_admins(db: AsyncSession, data: dict[str, str]) -> None:
         await realtime_publish(admin_id, EVENT, data)
 
 
+def is_duplicate(
+    *, has_account: bool, latest: AccessRequest | None, now: datetime | None = None
+) -> bool:
+    """A request adds nothing when the person already has an account, is already waiting
+    for review, or was declined recently."""
+    if has_account:
+        return True
+    if latest is None:
+        return False
+    if latest.status == "pending":
+        return True
+    if latest.status == "declined" and latest.decided_at is not None:
+        return latest.decided_at > (now or datetime.now(timezone.utc)) - DECLINE_COOLDOWN
+    return False
+
+
 async def _pending(db: AsyncSession, request_id: UUID) -> AccessRequest:
     item = await db.get(AccessRequest, request_id)
     if item is None:
@@ -111,16 +129,32 @@ async def submit_access_request(
         ) from None
     await throttle.record_failure(db, keys)
 
+    # Same answer either way, so the form never reveals who already has an account.
+    email = str(payload.email).lower()
+    has_account = await db.scalar(select(User.id).where(func.lower(User.email) == email))
+    latest = await db.scalar(
+        select(AccessRequest)
+        .where(func.lower(AccessRequest.email) == email)
+        .order_by(AccessRequest.created_at.desc())
+        .limit(1)
+    )
+    if is_duplicate(has_account=has_account is not None, latest=latest):
+        return {"status": "received"}
+
     item = AccessRequest(
         full_name=payload.full_name,
-        email=str(payload.email).lower(),
+        email=email,
         organization=payload.organization,
         volume=payload.volume,
         use_case=payload.use_case.strip(),
         ip=ip[:64] if ip else None,
     )
     db.add(item)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return {"status": "received"}
     await db.refresh(item)
 
     site_url = settings.public_app_url.rstrip("/")

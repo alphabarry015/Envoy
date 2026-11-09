@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from pydantic import ValidationError
 
-from app.api.v1.access_requests import AccessRequestIn
+from app.api.v1.access_requests import AccessRequestIn, is_duplicate
+from app.models.access_request import AccessRequest
 from app.services.access_request_email import render_admin_notification, render_decline
 
 
@@ -54,3 +57,19 @@ def test_rejects_unknown_volume_and_bad_email() -> None:
         _payload(volume="lots")
     with pytest.raises(ValidationError):
         _payload(email="nope")
+
+
+def _request(status: str, decided_days_ago: int | None = None) -> AccessRequest:
+    decided = None
+    if decided_days_ago is not None:
+        decided = datetime.now(timezone.utc) - timedelta(days=decided_days_ago)
+    return AccessRequest(email="ada@example.com", status=status, decided_at=decided)
+
+
+def test_duplicate_requests_are_ignored() -> None:
+    assert is_duplicate(has_account=False, latest=None) is False
+    assert is_duplicate(has_account=True, latest=None) is True
+    assert is_duplicate(has_account=False, latest=_request("pending")) is True
+    assert is_duplicate(has_account=False, latest=_request("declined", 3)) is True
+    assert is_duplicate(has_account=False, latest=_request("declined", 45)) is False
+    assert is_duplicate(has_account=False, latest=_request("accepted", 1)) is False
