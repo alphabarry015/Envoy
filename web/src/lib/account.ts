@@ -5,7 +5,25 @@ export function accountName(email: string): string {
     .map((part) => part.replace(/\d+$/g, ""))
     .filter(Boolean);
   if (words.length === 0) return "Account";
-  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+  return words
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/** The name the person typed (invite or access request) wins; the email is only a fallback. */
+export function displayNameOf(
+  email: string,
+  displayName?: string | null,
+): string {
+  return displayName?.trim() || accountName(email);
+}
+
+export const PROFILE_NAME_EVENT = "envoy:profile-name";
+
+export function announceProfileName(displayName: string | null) {
+  window.dispatchEvent(
+    new CustomEvent(PROFILE_NAME_EVENT, { detail: displayName }),
+  );
 }
 
 export function accountInitials(name: string): string {

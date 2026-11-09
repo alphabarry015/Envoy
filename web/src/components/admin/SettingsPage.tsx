@@ -1,8 +1,15 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { announceProfileName } from "../../lib/account";
 import { apiBase } from "../../lib/apiBase";
-import { authHeader, readSession, replaceAccessToken, signOut, signOutEverywhere } from "../../lib/auth";
+import {
+  authHeader,
+  readSession,
+  replaceAccessToken,
+  signOut,
+  signOutEverywhere,
+} from "../../lib/auth";
 import { BTN_PRIMARY, FIELD_COMPACT, KICKER } from "../../lib/consoleUi";
 import { PageLoading } from "../ui/ScanLoading";
 
@@ -58,10 +65,16 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [inviteReplyTo, setInviteReplyTo] = useState("");
   const [inviteSaving, setInviteSaving] = useState(false);
-  const [inviteMessage, setInviteMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [inviteMessage, setInviteMessage] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [nameSaving, setNameSaving] = useState(false);
-  const [nameMessage, setNameMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [nameMessage, setNameMessage] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +92,10 @@ export default function SettingsPage() {
         }
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setLoadError(cause instanceof Error ? cause.message : "Could not load settings.");
+        if (!cancelled)
+          setLoadError(
+            cause instanceof Error ? cause.message : "Could not load settings.",
+          );
       });
     return () => {
       cancelled = true;
@@ -112,7 +128,11 @@ export default function SettingsPage() {
       setForm(EMPTY_FORM);
       setSaved(true);
     } catch (cause: unknown) {
-      setFormError(cause instanceof Error ? cause.message : "Could not update the password.");
+      setFormError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not update the password.",
+      );
     } finally {
       setSaving(false);
     }
@@ -132,11 +152,13 @@ export default function SettingsPage() {
       const body = (await response.json()) as Account;
       setAccount(body);
       setDisplayName(body.display_name ?? "");
+      announceProfileName(body.display_name ?? null);
       setNameMessage({ ok: true, text: "Name saved." });
     } catch (cause: unknown) {
       setNameMessage({
         ok: false,
-        text: cause instanceof Error ? cause.message : "Could not save your name.",
+        text:
+          cause instanceof Error ? cause.message : "Could not save your name.",
       });
     } finally {
       setNameSaving(false);
@@ -148,11 +170,16 @@ export default function SettingsPage() {
     setInviteSaving(true);
     setInviteMessage(null);
     try {
-      const response = await fetch(`${apiBase()}/api/v1/auth/me/invite-settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...authHeader() },
-        body: JSON.stringify({ invite_reply_to: inviteReplyTo.trim() || null }),
-      });
+      const response = await fetch(
+        `${apiBase()}/api/v1/auth/me/invite-settings`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify({
+            invite_reply_to: inviteReplyTo.trim() || null,
+          }),
+        },
+      );
       if (!response.ok) throw new Error(await readError(response));
       const body = (await response.json()) as Account;
       setAccount(body);
@@ -166,7 +193,10 @@ export default function SettingsPage() {
     } catch (cause: unknown) {
       setInviteMessage({
         ok: false,
-        text: cause instanceof Error ? cause.message : "Could not save the reply address.",
+        text:
+          cause instanceof Error
+            ? cause.message
+            : "Could not save the reply address.",
       });
     } finally {
       setInviteSaving(false);
@@ -187,9 +217,7 @@ export default function SettingsPage() {
     return (
       <div>
         {loadError ? <p className="text-sm text-red-600">{loadError}</p> : null}
-        {loadError ? null : (
-          <PageLoading>Loading…</PageLoading>
-        )}
+        {loadError ? null : <PageLoading>Loading…</PageLoading>}
       </div>
     );
   }
@@ -199,11 +227,14 @@ export default function SettingsPage() {
       <section className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-7">
         <p className={KICKER}>Profile</p>
         <p className="mt-3 text-sm text-neutral-500">
-          Your name appears in the invitations you send. Your email address is never shown.
+          Your name appears in the invitations you send. Your email address is
+          never shown.
         </p>
         <form className="mt-5 space-y-3" onSubmit={submitProfile}>
           <label className="block">
-            <span className="mb-1.5 block text-xs text-neutral-500">Your name</span>
+            <span className="mb-1.5 block text-xs text-neutral-500">
+              Your name
+            </span>
             <input
               required
               maxLength={120}
@@ -215,7 +246,9 @@ export default function SettingsPage() {
             />
           </label>
           {nameMessage ? (
-            <p className={`text-sm ${nameMessage.ok ? "text-emerald-700" : "text-red-600"}`}>
+            <p
+              className={`text-sm ${nameMessage.ok ? "text-emerald-700" : "text-red-600"}`}
+            >
               {nameMessage.text}
             </p>
           ) : null}
@@ -228,48 +261,71 @@ export default function SettingsPage() {
       <section className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-7">
         <p className={KICKER}>Password</p>
         <p className="mt-3 text-sm text-neutral-500">
-          Signed in as <span className="font-medium text-neutral-950">{account.email}</span>. Use at least 10
-          characters.
+          Signed in as{" "}
+          <span className="font-medium text-neutral-950">{account.email}</span>.
+          Use at least 10 characters.
         </p>
         <form className="mt-5 space-y-3" onSubmit={submitPassword}>
           <label className="block">
-            <span className="mb-1.5 block text-xs text-neutral-500">Current password</span>
+            <span className="mb-1.5 block text-xs text-neutral-500">
+              Current password
+            </span>
             <input
               type="password"
               autoComplete="current-password"
               required
               value={form.current}
-              onChange={(event) => setForm((current) => ({ ...current, current: event.target.value }))}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  current: event.target.value,
+                }))
+              }
               className={FIELD_COMPACT}
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-xs text-neutral-500">New password</span>
+            <span className="mb-1.5 block text-xs text-neutral-500">
+              New password
+            </span>
             <input
               type="password"
               autoComplete="new-password"
               required
               minLength={10}
               value={form.next}
-              onChange={(event) => setForm((current) => ({ ...current, next: event.target.value }))}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, next: event.target.value }))
+              }
               className={FIELD_COMPACT}
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-xs text-neutral-500">Confirm new password</span>
+            <span className="mb-1.5 block text-xs text-neutral-500">
+              Confirm new password
+            </span>
             <input
               type="password"
               autoComplete="new-password"
               required
               minLength={10}
               value={form.confirm}
-              onChange={(event) => setForm((current) => ({ ...current, confirm: event.target.value }))}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  confirm: event.target.value,
+                }))
+              }
               className={FIELD_COMPACT}
             />
           </label>
-          {formError ? <p className="text-sm text-red-600">{formError}</p> : null}
+          {formError ? (
+            <p className="text-sm text-red-600">{formError}</p>
+          ) : null}
           {saved ? (
-            <p className="text-sm text-emerald-700">Password updated. Other devices were signed out.</p>
+            <p className="text-sm text-emerald-700">
+              Password updated. Other devices were signed out.
+            </p>
           ) : null}
           <button type="submit" className={BTN_PRIMARY} disabled={saving}>
             {saving ? "Saving…" : "Update password"}
@@ -281,12 +337,15 @@ export default function SettingsPage() {
         <section className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-7">
           <p className={KICKER}>Invitation emails</p>
           <p className="mt-3 text-sm text-neutral-500">
-            When someone answers an invitation you send, the reply goes to this address. Leave it
-            empty to send invitations without a reply address. Only admins see this setting.
+            When someone answers an invitation you send, the reply goes to this
+            address. Leave it empty to send invitations without a reply address.
+            Only admins see this setting.
           </p>
           <form className="mt-5 space-y-3" onSubmit={submitInviteSettings}>
             <label className="block">
-              <span className="mb-1.5 block text-xs text-neutral-500">Reply-to address</span>
+              <span className="mb-1.5 block text-xs text-neutral-500">
+                Reply-to address
+              </span>
               <input
                 type="email"
                 value={inviteReplyTo}
@@ -297,11 +356,17 @@ export default function SettingsPage() {
               />
             </label>
             {inviteMessage ? (
-              <p className={`text-sm ${inviteMessage.ok ? "text-emerald-700" : "text-red-600"}`}>
+              <p
+                className={`text-sm ${inviteMessage.ok ? "text-emerald-700" : "text-red-600"}`}
+              >
                 {inviteMessage.text}
               </p>
             ) : null}
-            <button type="submit" className={BTN_PRIMARY} disabled={inviteSaving}>
+            <button
+              type="submit"
+              className={BTN_PRIMARY}
+              disabled={inviteSaving}
+            >
               {inviteSaving ? "Saving…" : "Save reply address"}
             </button>
           </form>
@@ -313,11 +378,15 @@ export default function SettingsPage() {
         <dl className="mt-5 divide-y divide-neutral-200">
           <div className="flex flex-wrap items-baseline justify-between gap-3 py-3">
             <dt className="text-sm text-neutral-500">Browser</dt>
-            <dd className="text-sm font-medium text-neutral-950">This device</dd>
+            <dd className="text-sm font-medium text-neutral-950">
+              This device
+            </dd>
           </div>
           <div className="flex flex-wrap items-baseline justify-between gap-3 py-3">
             <dt className="text-sm text-neutral-500">Signed in</dt>
-            <dd className="text-sm font-medium text-neutral-950">{signedInLabel(session?.signedInAt)}</dd>
+            <dd className="text-sm font-medium text-neutral-950">
+              {signedInLabel(session?.signedInAt)}
+            </dd>
           </div>
         </dl>
         <button

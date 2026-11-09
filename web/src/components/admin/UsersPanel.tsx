@@ -15,7 +15,7 @@ import {
   fetchAccessRequests,
 } from "../../lib/accessRequests";
 import { readSession } from "../../lib/auth";
-import { accountInitials, accountName } from "../../lib/account";
+import { accountInitials, displayNameOf } from "../../lib/account";
 import {
   BTN_GHOST,
   BTN_PRIMARY,
@@ -507,12 +507,12 @@ export default function UsersPanel() {
                           aria-hidden="true"
                         >
                           {accountInitials(
-                            user.name?.trim() || accountName(user.email),
+                            displayNameOf(user.email, user.name),
                           )}
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate font-medium text-neutral-950">
-                            {user.name?.trim() || accountName(user.email)}
+                            {displayNameOf(user.email, user.name)}
                           </span>
                           <span className="block truncate text-neutral-500">
                             {user.email}
