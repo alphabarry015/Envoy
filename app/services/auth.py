@@ -311,15 +311,19 @@ async def update_user(db: AsyncSession, actor: User, user_id: UUID, payload: Use
 
 
 async def revoke_invite(db: AsyncSession, actor: User, user_id: UUID) -> None:
-    """Retire une invitation encore en attente, y compris le miroir Supabase Auth."""
+    """Retire une invitation en attente ou supprime un compte suspendu, miroir Supabase Auth compris.
+
+    Un compte actif doit d'abord être suspendu : la suppression efface aussi ses domaines,
+    clés API, templates, webhooks et logs.
+    """
     _require_admin(actor)
     user = await db.get(User, user_id)
     if user is None:
         raise AuthError(404, "User not found.")
     if user.id == actor.id:
         raise AuthError(403, "You cannot remove your own account.")
-    if user.status != UserStatus.PENDING:
-        raise AuthError(422, "Only a pending invite can be revoked.")
+    if user.status not in (UserStatus.PENDING, UserStatus.SUSPENDED):
+        raise AuthError(422, "Suspend this account before deleting it.")
     try:
         await db.execute(text(read_sql("auth_delete_identity.sql")), {"id": user.id})
         await db.execute(text(read_sql("auth_delete_user.sql")), {"id": user.id})
@@ -327,7 +331,7 @@ async def revoke_invite(db: AsyncSession, actor: User, user_id: UUID) -> None:
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        raise AuthError(409, "This invite cannot be revoked.") from exc
+        raise AuthError(409, "This account cannot be deleted.") from exc
 
 
 async def change_password(db: AsyncSession, user: User, payload: PasswordChangeRequest) -> str:

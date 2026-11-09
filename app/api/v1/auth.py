@@ -118,7 +118,7 @@ async def update_account(
         raise _auth_error(exc) from exc
 
 
-@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Révoquer une invitation")
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Révoquer une invitation ou supprimer un compte suspendu")
 async def remove_invite(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),

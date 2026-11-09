@@ -184,3 +184,12 @@ export async function revokeUserInvite(id: string): Promise<void> {
   });
   if (!response.ok) throw new Error(await readApiError(response, "Could not revoke this invite."));
 }
+
+/** Permanently deletes a suspended account and everything it owns. */
+export async function deleteSuspendedUser(id: string): Promise<void> {
+  const response = await fetch(`${apiUrl()}/api/v1/auth/users/${id}`, {
+    method: "DELETE",
+    headers: authHeader(),
+  });
+  if (!response.ok) throw new Error(await readApiError(response, "Could not delete this account."));
+}

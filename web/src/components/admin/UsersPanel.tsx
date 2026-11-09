@@ -34,6 +34,7 @@ import {
   type UserStatus,
   DOMAIN_QUOTA_OPTIONS,
   fetchUsers,
+  deleteSuspendedUser,
   revokeUserInvite,
   sendInvite as issueInvite,
   setUserStatus,
@@ -127,6 +128,7 @@ export default function UsersPanel() {
   const [form, setForm] = useState<FormState>(() => emptyForm("ses"));
   const [error, setError] = useState<string | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [requests, setRequests] = useState<AccessRequestItem[]>([]);
   const [requestsError, setRequestsError] = useState<string | null>(null);
   const [fromRequest, setFromRequest] = useState<AccessRequestItem | null>(
@@ -201,6 +203,7 @@ export default function UsersPanel() {
 
   function closeMenu() {
     setMenuId(null);
+    setConfirmDeleteId(null);
     setMenuPos(null);
   }
 
@@ -394,6 +397,21 @@ export default function UsersPanel() {
     } catch (cause: unknown) {
       setLoadError(
         cause instanceof Error ? cause.message : "Could not update this user.",
+      );
+    }
+  }
+
+  async function deleteUser(id: string) {
+    closeMenu();
+    setLoadError(null);
+    try {
+      await deleteSuspendedUser(id);
+      await reload();
+    } catch (cause: unknown) {
+      setLoadError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not delete this account.",
       );
     }
   }
@@ -932,14 +950,27 @@ export default function UsersPanel() {
               }}
               className={`fixed z-50 overflow-hidden rounded-sm py-1 ${PORTAL_SURFACE}`}
             >
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
-                onClick={() => openEdit(menuUser)}
-              >
-                Edit quotas
-              </button>
+              {menuUser.status === "active" ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
+                  onClick={() => openEdit(menuUser)}
+                >
+                  Edit quotas
+                </button>
+              ) : null}
+              {menuUser.status === "active" &&
+              menuUser.email !== sessionEmail ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
+                  onClick={() => void changeStatus(menuUser, "suspended")}
+                >
+                  Suspend
+                </button>
+              ) : null}
               {menuUser.status === "pending" ? (
                 <button
                   type="button"
@@ -949,26 +980,43 @@ export default function UsersPanel() {
                 >
                   Revoke invite
                 </button>
-              ) : menuUser.email === sessionEmail ? null : menuUser.status ===
-                "suspended" ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex w-full items-center px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
-                  onClick={() => void changeStatus(menuUser, "active")}
-                >
-                  Reactivate
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex w-full items-center px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
-                  onClick={() => void changeStatus(menuUser, "suspended")}
-                >
-                  Suspend
-                </button>
-              )}
+              ) : null}
+              {menuUser.status === "suspended" ? (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
+                    onClick={() => void changeStatus(menuUser, "active")}
+                  >
+                    Reactivate
+                  </button>
+                  {confirmDeleteId === menuUser.id ? (
+                    <div className="border-t border-neutral-200 px-3 py-2">
+                      <p className="text-xs leading-relaxed text-neutral-600">
+                        Deletes the account, its domains, keys and logs.
+                      </p>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="mt-2 w-full rounded-sm bg-red-600 px-2 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700"
+                        onClick={() => void deleteUser(menuUser.id)}
+                      >
+                        Delete for good
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="flex w-full items-center px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
+                      onClick={() => setConfirmDeleteId(menuUser.id)}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </>
+              ) : null}
             </div>,
             document.body,
           )
