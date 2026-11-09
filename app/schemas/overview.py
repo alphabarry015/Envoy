@@ -12,6 +12,7 @@ class OverviewActivity(BaseModel):
     subject: str
     status: str
     provider: str | None = None
+    kind: str = "api"
     created_at: datetime
 
 

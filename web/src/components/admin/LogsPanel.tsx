@@ -1,6 +1,7 @@
 import { ChevronRight, Mail, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import InviteBadge from "./InviteBadge";
 
 import {
   type ConsoleEmailLog,
@@ -148,6 +149,7 @@ export default function LogsPanel() {
                     </td>
                     <td className="truncate px-5 py-4 text-neutral-600">
                       {log.subject}
+                      <InviteBadge kind={log.kind} />
                     </td>
                     <td className="px-5 py-4">
                       <ProviderBadge provider={log.provider} />

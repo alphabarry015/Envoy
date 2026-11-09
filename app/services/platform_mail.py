@@ -33,6 +33,8 @@ _cache: dict[tuple[str, str], tuple[float, str | None]] = {}
 @dataclass
 class Delivery:
     sent_with: str | None = None
+    provider: str | None = None
+    message_id: str | None = None
     failures: list[str] = field(default_factory=list)
 
     @property
@@ -154,7 +156,7 @@ async def deliver(
             result.failures.append(f"{label}: {reason}")
             continue
         try:
-            await EmailRouter([providers[name]]).send(
+            sent = await EmailRouter([providers[name]]).send(
                 from_address=f"Envoy <{settings.platform_mail_from}>",
                 to_addresses=[to],
                 subject=subject,
@@ -167,6 +169,8 @@ async def deliver(
             logger.warning("platform_mail_failed provider=%s error=%s", name, exc)
             continue
         result.sent_with = label
+        result.provider = name
+        result.message_id = (sent.message_id or None) if sent else None
         break
     if not names:
         result.failures.append("No sending tool is connected.")

@@ -72,6 +72,14 @@ def test_invite_shows_names_never_the_inviter_email() -> None:
     assert subject == "The Envoy team invited you to Envoy"
 
 
+def test_logged_invites_hide_the_code() -> None:
+    from app.services.auth import _mask_code
+
+    assert _mask_code("ABCD-EFGH-JKMN-PQRS") == "ABCD-••••-••••-••••"
+    assert "EFGH" not in _mask_code("ABCD-EFGH-JKMN-PQRS")
+    assert _mask_code("legacy-long-token") == "••••"
+
+
 def test_invite_codes_are_typeable() -> None:
     from app.core.security import generate_invite_token, normalize_invite_token
 

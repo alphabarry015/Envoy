@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from uuid import UUID
@@ -20,12 +21,13 @@ from app.core.security import (
     normalize_invite_token,
     verify_password,
 )
+from app.models.email_log import EmailLog, EmailStatus
 from app.models.suppression import Suppression
 from app.models.user import User, UserRole, UserStatus
 from app.sql_files import read_sql
 from app.providers.factory import build_provider_map
 from app.services.invite_email import render_invite
-from app.services.platform_mail import PROVIDER_LABELS, deliver
+from app.services.platform_mail import PROVIDER_LABELS, Delivery, deliver
 from app.services.realtime import publish as realtime_publish
 from app.schemas.user import (
     AcceptInviteRequest,
@@ -116,6 +118,49 @@ def _activation_link(token: str) -> str:
     return f"{base}/auth/accept-invite?token={quote(token, safe='')}"
 
 
+def _mask_code(code: str) -> str:
+    return code[:4] + "".join("-••••" for _ in range(3)) if len(code) == 19 else "••••"
+
+
+async def _log_invite(
+    db: AsyncSession,
+    actor: User,
+    recipient: str,
+    subject: str,
+    html: str,
+    text: str,
+    code: str,
+    delivery: Delivery,
+) -> None:
+    """Invitations show up in the admin's logs and overview, never in their send quota."""
+    masked = _mask_code(code)
+    now = datetime.now(timezone.utc)
+    db.add(
+        EmailLog(
+            user_id=actor.id,
+            message_id=str(uuid.uuid4()),
+            ses_message_id=delivery.message_id[:128] if delivery.message_id else None,
+            provider=delivery.provider,
+            from_address=f"Envoy <{settings.platform_mail_from}>",
+            to_addresses=[recipient],
+            subject=subject[:998],
+            html=html.replace(code, masked),
+            text_body=text.replace(code, masked),
+            status=EmailStatus.SENT if delivery.sent else EmailStatus.FAILED,
+            error_message=None if delivery.sent else delivery.error,
+            sent_at=now if delivery.sent else None,
+            kind="invite",
+        )
+    )
+    try:
+        await db.commit()
+    except Exception:  # noqa: BLE001 - logging must never break the invitation itself
+        await db.rollback()
+        logger.exception("invite_log_failed")
+        return
+    await realtime_publish(actor.id, "emails.changed", {"kind": "invite"})
+
+
 async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest) -> InviteCreatedResponse:
     _require_admin(actor)
     email = payload.email.lower()
@@ -181,6 +226,7 @@ async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest)
         reply_to=actor.invite_reply_to,
         prefer=tool,
     )
+    await _log_invite(db, actor, user.email, subject, html_body, text_body, raw_token, delivery)
     await realtime_publish(
         actor.id,
         "users.changed",

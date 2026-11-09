@@ -7,6 +7,7 @@ import { onRealtime } from "../../lib/realtime";
 import { PageLoading } from "../ui/ScanLoading";
 import { providerLabel } from "../../lib/providerOptions";
 import { MailStatusBadge } from "./EmailsPanel";
+import InviteBadge from "./InviteBadge";
 import { MethodBadge, ProviderBadge } from "./LogsPanel";
 
 export default function EmailDetailPage() {
@@ -69,6 +70,7 @@ export default function EmailDetailPage() {
             </p>
             <h2 className="mt-1 text-xl font-semibold tracking-tight text-neutral-950 md:text-2xl">
               {email.subject}
+              <InviteBadge kind={email.kind} />
             </h2>
           </div>
           <div className="flex flex-wrap items-center gap-2">

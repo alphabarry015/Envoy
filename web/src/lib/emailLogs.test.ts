@@ -21,6 +21,7 @@ const sample: ConsoleEmailLog[] = [
     errorMessage: null,
     createdAt: new Date().toISOString(),
     sentAt: new Date().toISOString(),
+    kind: "api",
   },
   {
     id: "2",
@@ -40,6 +41,7 @@ const sample: ConsoleEmailLog[] = [
     errorMessage: "550",
     createdAt: new Date().toISOString(),
     sentAt: new Date().toISOString(),
+    kind: "api",
   },
 ];
 

@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -250,7 +250,7 @@ async def _enforce_quota(db: AsyncSession, user: User, api_key: ApiKey) -> None:
     now = datetime.now(timezone.utc)
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     month_start = day_start.replace(day=1)
-    counted = EmailLog.status.notin_(_UNCOUNTED)
+    counted = and_(EmailLog.status.notin_(_UNCOUNTED), EmailLog.kind == "api")
     row = (
         await db.execute(
             select(

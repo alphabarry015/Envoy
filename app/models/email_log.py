@@ -78,6 +78,8 @@ class EmailLog(Base):
         index=True,
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # "api" for sends made with an API key, "invite" for invitation emails sent by an admin.
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="api", server_default="api")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

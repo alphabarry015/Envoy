@@ -24,6 +24,7 @@ class EmailLogResponse(BaseModel):
     text: str | None = None
     domain: str | None = None
     api_key_prefix: str | None = None
+    kind: str = "api"
     created_at: datetime
     sent_at: datetime | None = None
 

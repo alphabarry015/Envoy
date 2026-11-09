@@ -8,6 +8,7 @@ hljs.registerLanguage("xml", xml);
 
 import { type ConsoleEmailLog, fetchLog } from "../../lib/emailLogs";
 import { PageLoading } from "../ui/ScanLoading";
+import InviteBadge from "./InviteBadge";
 import { HttpStatus, MethodBadge, ProviderBadge, StatusBadge } from "./LogsPanel";
 
 function formatWhen(iso: string | null) {
@@ -75,6 +76,7 @@ export default function LogDetailPage() {
             </p>
             <h2 className="mt-1 text-xl font-semibold tracking-tight text-neutral-950 md:text-2xl">
               {log.subject}
+              <InviteBadge kind={log.kind} />
             </h2>
           </div>
           <div className="flex flex-wrap items-center gap-2">

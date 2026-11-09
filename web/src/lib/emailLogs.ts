@@ -43,6 +43,8 @@ export type ConsoleEmailLog = {
   text: string;
   createdAt: string;
   sentAt: string | null;
+  /** "invite" for invitation emails sent from the console, "api" otherwise. */
+  kind: "api" | "invite";
 };
 
 type LogPayload = {
@@ -61,6 +63,7 @@ type LogPayload = {
   text: string | null;
   domain: string | null;
   api_key_prefix: string | null;
+  kind?: "api" | "invite";
   created_at: string;
   sent_at: string | null;
 };
@@ -106,6 +109,7 @@ function fromPayload(row: LogPayload): ConsoleEmailLog {
     text: row.text ?? "",
     createdAt: row.created_at,
     sentAt: row.sent_at,
+    kind: row.kind === "invite" ? "invite" : "api",
   };
 }
 
@@ -146,6 +150,7 @@ export function filterLogs(
       String(log.httpStatus),
       log.method,
       log.text,
+      log.kind,
       ...log.to,
       ...log.cc,
     ]

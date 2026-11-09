@@ -5,6 +5,7 @@ import { apiBase } from "../lib/apiBase";
 import { authHeader } from "../lib/auth";
 import { formatSentAgo } from "../lib/emails";
 import { providerLabel } from "../lib/providerOptions";
+import InviteBadge from "../components/admin/InviteBadge";
 import { PageLoading } from "../components/ui/ScanLoading";
 
 type OverviewActivity = {
@@ -13,6 +14,7 @@ type OverviewActivity = {
   subject: string;
   status: string;
   provider?: string | null;
+  kind?: string;
   created_at: string;
 };
 
@@ -116,7 +118,10 @@ export function OverviewPanel() {
                 >
                   <span className="min-w-0">
                     <span className="block font-mono text-neutral-700">{row.message_id}</span>
-                    <span className="mt-0.5 block text-neutral-600">{row.subject}</span>
+                    <span className="mt-0.5 block text-neutral-600">
+                      {row.subject}
+                      <InviteBadge kind={row.kind} />
+                    </span>
                   </span>
                   <span className="shrink-0 text-right">
                     <span className="block font-mono text-[11px] text-[#0A4BD6]">

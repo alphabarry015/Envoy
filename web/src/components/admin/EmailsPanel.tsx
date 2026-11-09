@@ -14,6 +14,7 @@ import {
   filterEmails,
   formatSentAgo,
 } from "../../lib/emails";
+import InviteBadge from "./InviteBadge";
 import { ProviderBadge } from "./LogsPanel";
 const DIRECTIONS: Array<{ id: MailDirection; label: string }> = [
   { id: "all", label: "All" },
@@ -185,7 +186,10 @@ export default function EmailsPanel() {
                     <td className="px-5 py-4">
                       <MailStatusBadge status={email.status} />
                     </td>
-                    <td className="truncate px-5 py-4 text-neutral-600">{email.subject}</td>
+                    <td className="truncate px-5 py-4 text-neutral-600">
+                      {email.subject}
+                      <InviteBadge kind={email.kind} />
+                    </td>
                     <td className="px-5 py-4 font-mono text-xs text-neutral-500">
                       {formatSentAgo(email.sentAt)}
                     </td>

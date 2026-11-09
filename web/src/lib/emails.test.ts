@@ -13,6 +13,7 @@ const sample: ConsoleEmail[] = [
     provider: "ses",
     text: "Amount due",
     sentAt: new Date().toISOString(),
+    kind: "api",
   },
   {
     id: "2",
@@ -24,6 +25,7 @@ const sample: ConsoleEmail[] = [
     provider: null,
     text: "Thanks",
     sentAt: new Date().toISOString(),
+    kind: "api",
   },
   {
     id: "3",
@@ -35,6 +37,7 @@ const sample: ConsoleEmail[] = [
     provider: "ses",
     text: "Not sent",
     sentAt: new Date().toISOString(),
+    kind: "api",
   },
 ];
 

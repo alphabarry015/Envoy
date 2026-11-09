@@ -66,6 +66,7 @@ def _response(
         text=log.text_body if include_body else None,
         domain=domain_name,
         api_key_prefix=prefix,
+        kind=log.kind,
         created_at=log.created_at,
         sent_at=log.sent_at,
     )

@@ -27,6 +27,7 @@ export type ConsoleEmail = {
   method: HttpMethod;
   text: string;
   sentAt: string;
+  kind: "api" | "invite";
 };
 
 function emailFromLog(log: ConsoleEmailLog): ConsoleEmail {
@@ -41,6 +42,7 @@ function emailFromLog(log: ConsoleEmailLog): ConsoleEmail {
     method: "POST",
     text: log.text || "This send has no stored message body.",
     sentAt: log.sentAt ?? log.createdAt,
+    kind: log.kind,
   };
 }
 
@@ -73,6 +75,7 @@ export function filterEmails(
       email.provider ?? "",
       email.method,
       email.text,
+      email.kind,
     ]
       .join(" ")
       .toLowerCase();

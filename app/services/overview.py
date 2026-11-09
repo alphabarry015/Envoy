@@ -54,6 +54,7 @@ async def account_overview(db: AsyncSession, user: User) -> OverviewResponse:
                 EmailLog.subject,
                 EmailLog.status,
                 EmailLog.provider,
+                EmailLog.kind,
                 EmailLog.created_at,
             )
         )
@@ -72,6 +73,7 @@ async def account_overview(db: AsyncSession, user: User) -> OverviewResponse:
                 subject=log.subject,
                 status=log.status.value,
                 provider=log.provider,
+                kind=log.kind,
                 created_at=log.created_at,
             )
             for log in recent.scalars().all()
