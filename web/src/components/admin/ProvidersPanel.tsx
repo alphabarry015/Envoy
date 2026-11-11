@@ -1,4 +1,11 @@
-import { ArrowDown, ArrowUp, Cable, ChevronRight } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Cable,
+  CheckCircle2,
+  ChevronRight,
+  HelpCircle,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -26,6 +33,42 @@ function usageHint(item: ProviderItem): string {
     ? `${formatCount(item.usage.sent_month)} / ${formatCount(item.monthly_limit)} month`
     : `${formatCount(item.usage.sent_month)} this month`;
   return `${day} · ${month}`;
+}
+
+function HealthBadge({ item }: { item: ProviderItem }) {
+  if (item.healthy) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-sm bg-emerald-50 px-2 py-0.5 font-mono text-[10px] tracking-wide text-emerald-700 uppercase">
+        <CheckCircle2 className="size-3" aria-hidden="true" />
+        Working
+      </span>
+    );
+  }
+  const issues = item.issues ?? [];
+  if (issues.length === 0) return null;
+  return (
+    <span
+      tabIndex={0}
+      role="img"
+      aria-label={`What is not working: ${issues.join(" ")}`}
+      onClick={(event) => event.stopPropagation()}
+      className="group/health relative inline-flex size-5 cursor-help items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-amber-700 outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+    >
+      <HelpCircle className="size-3.5" aria-hidden="true" />
+      <span className="pointer-events-none absolute top-full left-1/2 z-30 mt-2 hidden w-72 -translate-x-1/2 rounded-sm border border-neutral-200 bg-white p-3 text-left shadow-lg group-hover/health:block group-focus-visible/health:block">
+        <span className="block font-mono text-[10px] tracking-widest text-amber-700 uppercase">
+          What is not working
+        </span>
+        <span className="mt-2 block space-y-1.5">
+          {issues.map((issue) => (
+            <span key={issue} className="block text-xs leading-relaxed text-neutral-700">
+              • {issue}
+            </span>
+          ))}
+        </span>
+      </span>
+    </span>
+  );
 }
 
 export default function ProvidersPanel() {
@@ -134,6 +177,7 @@ export default function ProvidersPanel() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Cable className="size-4 text-neutral-400" aria-hidden="true" />
                   <p className="text-sm font-medium text-neutral-950">{item.label}</p>
+                  <HealthBadge item={item} />
                   <span className="rounded-sm bg-neutral-100 px-2 py-0.5 font-mono text-[10px] tracking-wide text-neutral-600 uppercase">
                     {roleLabel(item.role)}
                   </span>

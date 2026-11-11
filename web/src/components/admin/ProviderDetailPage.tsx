@@ -1,5 +1,5 @@
 import { ArrowLeft, Cable } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 
 import { BTN_GHOST, BTN_PRIMARY, FIELD_COMPACT } from "../../lib/consoleUi";
@@ -8,6 +8,7 @@ import {
   type ProviderDetail,
   type ProviderStatusCounts,
   type ProviderWebhookLink,
+  domainPlanUsage,
   domainStatsLabel,
   ensureProviderWebhook,
   fetchProvider,
@@ -284,6 +285,7 @@ export default function ProviderDetailPage() {
               ? "connected / on tool"
               : domainStatsLabel(provider.domains)
           }
+          corner={<DomainPlanBadge {...domainPlanUsage(provider.id, provider.domains)} />}
         />
         <StatCard
           label="Sent today"
@@ -430,18 +432,41 @@ export default function ProviderDetailPage() {
   );
 }
 
+function DomainPlanBadge({ used, limit }: { used: number; limit: number | null }) {
+  const full = limit != null && used >= limit;
+  return (
+    <span
+      className={`rounded-sm px-2 py-0.5 font-mono text-[11px] ${
+        full ? "bg-amber-50 text-amber-700" : "bg-[#0A4BD6]/10 text-[#0A4BD6]"
+      }`}
+      title={
+        limit == null
+          ? "No domain cap on the free plan"
+          : `${formatCount(used)} of ${formatCount(limit)} domains allowed on the free plan`
+      }
+    >
+      {formatCount(used)}/{limit == null ? "∞" : formatCount(limit)}
+    </span>
+  );
+}
+
 function StatCard({
   label,
   value,
   hint,
+  corner,
 }: {
   label: string;
   value: string;
   hint: string;
+  corner?: ReactNode;
 }) {
   return (
     <div className="rounded-sm border border-neutral-200 bg-neutral-50 p-5">
-      <p className="font-mono text-[11px] tracking-widest text-neutral-400 uppercase">{label}</p>
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-mono text-[11px] tracking-widest text-neutral-400 uppercase">{label}</p>
+        {corner}
+      </div>
       <p className="mt-3 text-3xl font-semibold tracking-tight text-neutral-950">{value}</p>
       <p className="mt-1 text-xs text-neutral-500">{hint}</p>
     </div>

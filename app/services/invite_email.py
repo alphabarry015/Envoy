@@ -12,14 +12,15 @@ def render_invite(
     *,
     link: str,
     code: str,
-    expires: datetime,
+    expires: datetime | None,
     recipient: str,
     inviter: str | None,
     site_url: str,
     invitee: str | None = None,
 ) -> tuple[str, str, str]:
     """Returns (subject, text, html)."""
-    when = expires.strftime("%B %d, %Y at %H:%M UTC")
+    when = expires.strftime("%B %d, %Y at %H:%M UTC") if expires else None
+    validity_text = f"expire on {when}" if when else "do not expire"
     # Only a display name is shown: the inviter's email address never appears in the email.
     name = one_line(inviter)
     who = name if name and "@" not in name else "The Envoy team"
@@ -40,7 +41,7 @@ def render_invite(
         f'Open {login_url}, choose "Have an invitation code?" and enter:\n'
         f"    {code}\n\n"
         f"You'll choose your password there. The link and the code work once "
-        f"and expire on {when}.\n\n"
+        f"and {validity_text}.\n\n"
         "Didn't expect this? Ignore this email. Nothing is created until you set a password.\n\n"
         f"Envoy · {site_url}\n"
         f"Sent to {recipient}.\n"
@@ -64,7 +65,11 @@ def render_invite(
             f'choose <strong style="color:{INK};font-weight:600">Have an invitation code?</strong> and enter this code.</p>'
             "</div>",
             paragraph(
-                f'The button and the code work once and expire on <strong style="color:{INK};font-weight:600">{escape(when)}</strong>.',
+                (
+                    f'The button and the code work once and expire on <strong style="color:{INK};font-weight:600">{escape(when)}</strong>.'
+                    if when
+                    else "The button and the code work once and do not expire."
+                ),
                 size=13,
                 margin="24px 0 0",
             ),

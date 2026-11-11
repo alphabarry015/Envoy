@@ -38,6 +38,8 @@ L'architecture est optimisée pour une exécution asynchrone légère, minimisan
 3. SES provisionne les jetons DKIM. Envoy compile et retourne le jeu complet d'enregistrements DNS (CNAME, TXT SPF, TXT DMARC).
 4. L'utilisateur configure les enregistrements chez son hébergeur DNS.
 5. L'endpoint `GET /api/v1/domains/{id}/verify` consulte `get_email_identity` sur AWS SES. Dès confirmation du statut DKIM (`SUCCESS`), le domaine bascule à l'état actif.
+6. Vérification DNS en direct (`app/services/dns_check.py`) : interrogation des serveurs de noms faisant autorité (repli sur 1.1.1.1 / 8.8.8.8 / 9.9.9.9), contrôles sémantiques (un seul SPF dont les `include:` attendus sont présents, un seul `_dmarc` commençant par `v=DMARC1`, MX attendu en priorité la plus haute).
+7. Revérification automatique (`app/services/dns_watcher.py`) : toutes les `DNS_RECHECK_SECONDS` (30 s), les domaines non entièrement configurés sont revérifiés ; un changement de statut est enregistré et poussé en temps réel (`domains.changed`). Quand tout le DNS est publié, l'outil d'envoi est re-synchronisé (au plus une fois toutes les 5 min par domaine).
 
 ### Flux 2 : Envoi d'E-mail Transactionnel (< 80 ms latency)
 1. Réception de la charge utile sur `POST /api/v1/send` (sécurisé par clé Bearer `envoy_live_...`).
@@ -57,8 +59,10 @@ L'architecture est optimisée pour une exécution asynchrone légère, minimisan
 ## 4. Système de Gestion des Accès, RBAC & Quotas Dynamiques
 
 * **Inscription Privée (Sur invitation)** : Absence de formulaire d'inscription public pour réduire la surface d'attaque. Seul un administrateur peut déclencher une invitation.
-* **Tokens temporaires cryptographiques** : Génération de jetons d'invitation uniques (`invite_token`) expirables (24h/48h) envoyés par e-mail (`/auth/accept-invite?token=...`).
-* **Quotas & Limites Dynamiques** : Définition par l'admin des plafonds de domaines autorisés et du volume d'envois (journalier/mensuel).
+* **Tokens temporaires cryptographiques** : Génération de jetons d'invitation uniques (`invite_token`, stockés hachés) expirables (24h/48h/N jours, ou « Never » jusqu'à usage ou révocation) envoyés par e-mail (`/auth/accept-invite?token=...`).
+* **Quotas & Limites Dynamiques** : Définition par l'admin des plafonds de domaines autorisés et du volume d'envois (journalier/mensuel), modifiables après activation du compte.
+* **Fin d'accès** : `users.access_expires_at` (optionnel). `User.is_active` est faux une fois la date passée : connexion, JWT console, clés API et envois sont refusés à la requête suivante. La console affiche un compte à rebours et déconnecte le membre à zéro ; une prolongation est poussée en temps réel (`account.changed`).
+* **État des outils** : `GET /api/v1/providers` renvoie `healthy` / `issues` à l'admin uniquement (les erreurs agrégées concernent tous les comptes).
 * **Révocation Instantanée** : Invalidation immédiate des clés API ou suspension de compte via middlewares FastAPI sans redémarrage du service.
 
 ---

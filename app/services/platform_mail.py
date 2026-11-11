@@ -100,10 +100,43 @@ def _sesv2():
     return _sesv2_client
 
 
+_ses_account_cache: tuple[float, bool] | None = None
+
+
+async def _ses_production() -> bool:
+    global _ses_account_cache
+    now = time.monotonic()
+    if _ses_account_cache and now - _ses_account_cache[0] < _CACHE_SECONDS:
+        return _ses_account_cache[1]
+    account = await asyncio.to_thread(_sesv2().get_account)
+    production = bool(account.get("ProductionAccessEnabled"))
+    _ses_account_cache = (now, production)
+    return production
+
+
+async def sending_issues(name: str) -> list[str]:
+    """What keeps a connected tool from sending platform emails. Empty when nothing is known wrong."""
+    domain = _sender_domain()
+    issues: list[str] = []
+    try:
+        cached = _cache.get((name, domain))
+        if cached and time.monotonic() - cached[0] < _CACHE_SECONDS:
+            reason = cached[1]
+        else:
+            reason = await _domain_blocker(name, domain)
+            _cache[(name, domain)] = (time.monotonic(), reason)
+        if reason:
+            issues.append(f"{reason}, so invitations skip this tool.")
+        if name == "ses" and not await _ses_production():
+            issues.append("Amazon SES is in sandbox mode: it only sends to verified addresses.")
+    except Exception as exc:  # noqa: BLE001 - an unreachable API is itself the issue
+        issues.append(f"Could not reach the tool's API ({str(exc)[:120]}).")
+    return issues
+
+
 async def _ses_sandbox_blocker(recipient: str) -> str | None:
     client = _sesv2()
-    account = await asyncio.to_thread(client.get_account)
-    if account.get("ProductionAccessEnabled"):
+    if await _ses_production():
         return None
     try:
         identity = await asyncio.to_thread(client.get_email_identity, EmailIdentity=recipient)
@@ -154,6 +187,7 @@ async def deliver(
         reason = await _blocker(name, to)
         if reason:
             result.failures.append(f"{label}: {reason}")
+            logger.warning("platform_mail_skipped provider=%s reason=%s", name, reason)
             continue
         try:
             sent = await EmailRouter([providers[name]]).send(

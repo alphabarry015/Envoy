@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +28,7 @@ from app.schemas.providers import (
     ProviderUsage,
     ProvidersUpdateRequest,
 )
-from app.services import brevo_domains, inbound_webhooks
+from app.services import brevo_domains, inbound_webhooks, platform_mail
 from app.services.domains import remote_name_sets
 
 _LABELS = {
@@ -53,7 +54,7 @@ class ProviderServiceError(Exception):
         super().__init__(detail)
 
 
-async def list_providers(db: AsyncSession) -> ProvidersResponse:
+async def list_providers(db: AsyncSession, *, with_health: bool = True) -> ProvidersResponse:
     await _ensure_rows(db)
     rows = {
         row.provider: row
@@ -71,12 +72,38 @@ async def list_providers(db: AsyncSession) -> ProvidersResponse:
     )
     chain = build_chain(enabled=enabled, fallback_order=fallback)
     effective = [item.name for item in chain]
+    connected_map = {name: providers[name].is_configured() for name in PROVIDER_IDS}
+    failures = await _recent_failures(db) if with_health else {}
+    remote_issues = dict(
+        zip(
+            PROVIDER_IDS,
+            await asyncio.gather(
+                *(
+                    platform_mail.sending_issues(name)
+                    if with_health and connected_map[name] and rows[name].enabled
+                    else _no_issues()
+                    for name in PROVIDER_IDS
+                )
+            ),
+        )
+    )
 
     items: list[ProviderItem] = []
     for name in PROVIDER_IDS:
         row = rows[name]
-        connected = providers[name].is_configured()
+        connected = connected_map[name]
         domain_capable = _domain_capable(name, connected, remote)
+        issues = (
+            _issues(
+                connected=connected,
+                enabled=row.enabled,
+                domain_capable=domain_capable,
+                remote=remote_issues[name],
+                failure=failures.get(name),
+            )
+            if with_health
+            else []
+        )
         role = _role(name, enabled[name], connected, effective)
         stats = usage.get(name, ProviderUsage())
         items.append(
@@ -93,6 +120,8 @@ async def list_providers(db: AsyncSession) -> ProvidersResponse:
                 usage=stats,
                 domains=domain_stats.get(name, ProviderDomainStats()),
                 testing=name == "mailtrap",
+                healthy=with_health and not issues,
+                issues=issues,
             )
         )
     items.sort(key=lambda item: (0 if item.id == "ses" else 1, item.sort_order, item.id))
@@ -271,6 +300,54 @@ async def _status_counts(
         if hasattr(counts, key):
             setattr(counts, key, int(total or 0))
     return counts
+
+
+async def _no_issues() -> list[str]:
+    return []
+
+
+async def _recent_failures(db: AsyncSession) -> dict[str, tuple[int, str | None]]:
+    """Failed sends of the last 24 hours per tool: (count, latest error)."""
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    rows = (
+        await db.execute(
+            select(EmailLog.provider, EmailLog.error_message)
+            .where(
+                EmailLog.provider.is_not(None),
+                EmailLog.status == EmailStatus.FAILED,
+                EmailLog.created_at >= since,
+            )
+            .order_by(EmailLog.created_at.desc())
+        )
+    ).all()
+    failures: dict[str, tuple[int, str | None]] = {}
+    for provider, error in rows:
+        count, latest = failures.get(str(provider), (0, error))
+        failures[str(provider)] = (count + 1, latest)
+    return failures
+
+
+def _issues(
+    *,
+    connected: bool,
+    enabled: bool,
+    domain_capable: bool,
+    remote: list[str],
+    failure: tuple[int, str | None] | None,
+) -> list[str]:
+    if not connected:
+        return ["No API key is set for this tool in Envoy."]
+    issues: list[str] = []
+    if not enabled:
+        issues.append("Disabled in Envoy: no email is sent with it.")
+    issues.extend(remote)
+    if not domain_capable:
+        issues.append("The key can send but cannot add or verify domains.")
+    if failure:
+        count, latest = failure
+        detail = f" Last error: {latest[:160]}" if latest else ""
+        issues.append(f"{count} send{'s' if count > 1 else ''} failed in the last 24 hours.{detail}")
+    return issues
 
 
 def _role(name: str, enabled: bool, connected: bool, effective: list[str]) -> str:

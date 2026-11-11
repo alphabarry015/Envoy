@@ -19,7 +19,10 @@ export type ConsoleUser = {
   monthlyQuota: number | null;
   apiKeysEnabled: boolean;
   invitedAt: string;
+  /** Pending invite only. */
   expiresAt: string | null;
+  /** Active seat: end of access; null = never. */
+  accessExpiresAt: string | null;
 };
 
 export type InviteDraft = {
@@ -31,6 +34,8 @@ export type InviteDraft = {
   monthlyQuota: number | null;
   apiKeysEnabled: boolean;
   expiresInHours: number;
+  /** Invitation stays valid until used or revoked; overrides expiresInHours. */
+  neverExpires?: boolean;
   /** Tool that delivers the invite email. */
   provider: ProviderId;
 };
@@ -46,6 +51,7 @@ type ApiUser = {
   monthly_send_quota: number | null;
   can_create_api_keys: boolean;
   invite_token_expires_at: string | null;
+  access_expires_at: string | null;
   created_at: string;
 };
 
@@ -53,7 +59,7 @@ type InviteResponse = {
   email: string;
   invite_token: string;
   invite_link: string;
-  expires_at: string;
+  expires_at: string | null;
   email_sent: boolean;
   sent_with: string | null;
   email_error: string | null;
@@ -63,11 +69,28 @@ export type IssuedInvite = {
   email: string;
   code: string;
   link: string;
-  expiresAt: string;
+  /** null = never expires. */
+  expiresAt: string | null;
   emailSent: boolean;
   sentWith: string | null;
   emailError: string | null;
+  /** Tool picked in the form; differs from sentWith when Envoy fell back. */
+  requestedWith?: string;
 };
+
+/** "Mailtrap: reason; Brevo: reason" → reason per tool label. */
+export function deliveryFailures(emailError: string | null): { tool: string; reason: string }[] {
+  if (!emailError) return [];
+  return emailError
+    .split("; ")
+    .map((part) => {
+      const index = part.indexOf(": ");
+      return index > 0
+        ? { tool: part.slice(0, index), reason: part.slice(index + 2) }
+        : { tool: "", reason: part };
+    })
+    .filter((item) => item.reason);
+}
 
 function apiRole(role: UserRole): "admin" | "user" {
   return role === "admin" ? "admin" : "user";
@@ -86,7 +109,15 @@ function toConsoleUser(row: ApiUser): ConsoleUser {
     apiKeysEnabled: row.can_create_api_keys,
     invitedAt: row.created_at,
     expiresAt: row.invite_token_expires_at,
+    accessExpiresAt: row.access_expires_at ?? null,
   };
+}
+
+export function accessExpired(user: ConsoleUser): boolean {
+  return (
+    user.accessExpiresAt !== null &&
+    new Date(user.accessExpiresAt).getTime() <= Date.now()
+  );
 }
 
 export async function readApiError(
@@ -128,7 +159,8 @@ export async function sendInvite(input: InviteDraft): Promise<IssuedInvite> {
       daily_send_quota: input.dailyQuota,
       monthly_send_quota: input.monthlyQuota,
       can_create_api_keys: input.apiKeysEnabled,
-      invite_expires_hours: input.expiresInHours,
+      invite_expires_hours: input.neverExpires ? null : input.expiresInHours,
+      invite_never_expires: Boolean(input.neverExpires),
       provider: input.provider,
     }),
   });
@@ -153,6 +185,8 @@ export function toIssuedInvite(payload: unknown): IssuedInvite {
 export async function updateUser(
   user: ConsoleUser,
   draft: InviteDraft,
+  /** ISO date, null = never, undefined = unchanged. */
+  accessExpiresAt?: string | null,
 ): Promise<void> {
   const response = await fetch(`${apiUrl()}/api/v1/auth/users/${user.id}`, {
     method: "PATCH",
@@ -164,6 +198,9 @@ export async function updateUser(
       daily_send_quota: draft.dailyQuota,
       monthly_send_quota: draft.monthlyQuota,
       can_create_api_keys: draft.apiKeysEnabled,
+      ...(accessExpiresAt === undefined
+        ? {}
+        : { access_expires_at: accessExpiresAt }),
     }),
   });
   if (!response.ok)

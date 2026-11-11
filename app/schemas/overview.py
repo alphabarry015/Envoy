@@ -16,6 +16,12 @@ class OverviewActivity(BaseModel):
     created_at: datetime
 
 
+class OverviewAllTime(BaseModel):
+    total: int = 0
+    by_status: dict[str, int] = {}
+    by_provider: dict[str, int] = {}
+
+
 class OverviewResponse(BaseModel):
     sends_today: int
     daily_send_quota: int | None
@@ -24,3 +30,7 @@ class OverviewResponse(BaseModel):
     active_api_keys: int
     bounce_rate: float
     recent: list[OverviewActivity]
+    recent_page: int = 1
+    recent_page_size: int = 10
+    recent_total: int = 0
+    all_time: OverviewAllTime = OverviewAllTime()

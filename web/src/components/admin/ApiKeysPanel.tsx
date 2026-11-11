@@ -291,29 +291,29 @@ export default function ApiKeysPanel() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] table-fixed border-collapse text-left text-sm">
-              <colgroup>
-                <col className="w-[16%]" />
-                <col className="w-[18%]" />
-                <col className="w-[10%]" />
-                <col className="w-[18%]" />
-                <col className="w-[14%]" />
-                <col className="w-[10%]" />
-                <col className="w-[8%]" />
-                <col className="w-[6%]" />
-              </colgroup>
+          <div>
+            <table className="w-full table-fixed border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-100/80 font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
-                  <th className="px-5 py-2.5 font-medium">Name</th>
-                  <th className="px-5 py-2.5 font-medium">Key</th>
-                  <th className="px-5 py-2.5 font-medium">Mode</th>
-                  <th className="px-5 py-2.5 font-medium">Permissions</th>
-                  <th className="px-5 py-2.5 font-medium">Provider</th>
-                  <th className="px-5 py-2.5 font-medium">Quotas</th>
-                  <th className="px-5 py-2.5 font-medium">Status</th>
-                  <th className="px-5 py-2.5 font-medium">Created</th>
-                  <th className="px-5 py-2.5 font-medium"> </th>
+                  <th className="px-3 py-2.5 font-medium md:pl-5">Name</th>
+                  <th className="px-3 py-2.5 font-medium">Key</th>
+                  <th className="hidden w-[9%] px-3 py-2.5 font-medium xl:table-cell">
+                    Mode
+                  </th>
+                  <th className="hidden px-3 py-2.5 font-medium lg:table-cell">
+                    Permissions
+                  </th>
+                  <th className="hidden w-[11%] px-3 py-2.5 font-medium xl:table-cell">
+                    Provider
+                  </th>
+                  <th className="hidden px-3 py-2.5 font-medium md:table-cell">
+                    Quotas
+                  </th>
+                  <th className="w-[92px] px-3 py-2.5 font-medium">Status</th>
+                  <th className="hidden w-[13%] px-3 py-2.5 font-medium lg:table-cell">
+                    Created
+                  </th>
+                  <th className="w-14 px-3 py-2.5 font-medium md:pr-5"> </th>
                 </tr>
               </thead>
               <tbody>
@@ -322,12 +322,17 @@ export default function ApiKeysPanel() {
                     key={key.id}
                     className="border-b border-neutral-200 last:border-0"
                   >
-                    <td className="px-5 py-4 font-medium text-neutral-900">
+                    <td
+                      className="truncate px-3 py-4 font-medium text-neutral-900 md:pl-5"
+                      title={key.name}
+                    >
                       {key.name}
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-4">
                       <div className="group/cell flex min-w-0 items-center gap-1.5 font-mono text-xs text-neutral-600">
-                        <span className="truncate">{key.prefix}</span>
+                        <span className="truncate" title={key.prefix}>
+                          {key.prefix}
+                        </span>
                         <button
                           type="button"
                           aria-label="Copy key prefix"
@@ -350,7 +355,7 @@ export default function ApiKeysPanel() {
                         </button>
                       </div>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="hidden px-3 py-4 xl:table-cell">
                       <span
                         className={`inline-flex rounded-sm px-2 py-0.5 font-mono text-[11px] ${
                           key.mode === "sandbox"
@@ -361,17 +366,19 @@ export default function ApiKeysPanel() {
                         {key.mode}
                       </span>
                     </td>
-                    <td className="px-5 py-4 font-mono text-[11px] text-neutral-500">
+                    <td className="hidden px-3 py-4 font-mono text-[11px] break-words text-neutral-500 lg:table-cell">
                       {key.scopes.join(" · ")}
                     </td>
-                    <td className="px-5 py-4 font-mono text-[11px] text-neutral-500">
+                    <td className="hidden truncate px-3 py-4 font-mono text-[11px] text-neutral-500 xl:table-cell">
                       {providerLabel(key.preferredProvider)}
                     </td>
-                    <td className="px-5 py-4 font-mono text-[11px] text-neutral-500">
-                      {formatQuota(key.dailyQuota)}/d ·{" "}
-                      {formatQuota(key.monthlyQuota)}/mo
+                    <td className="hidden px-3 py-4 font-mono text-[11px] text-neutral-500 md:table-cell">
+                      <span className="block">{formatQuota(key.dailyQuota)}/d</span>
+                      <span className="block">
+                        {formatQuota(key.monthlyQuota)}/mo
+                      </span>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-4">
                       {key.status === "active" ? (
                         <span className="inline-flex rounded-sm bg-emerald-50 px-2 py-0.5 font-mono text-[11px] text-emerald-700">
                           active
@@ -382,10 +389,10 @@ export default function ApiKeysPanel() {
                         </span>
                       )}
                     </td>
-                    <td className="px-5 py-4 font-mono text-xs text-neutral-500">
+                    <td className="hidden px-3 py-4 font-mono text-[11px] text-neutral-500 lg:table-cell">
                       {formatWhen(key.createdAt)}
                     </td>
-                    <td className="px-5 py-4 text-right">
+                    <td className="px-3 py-4 text-right md:pr-5">
                       <button
                         type="button"
                         ref={(node) => {
@@ -739,7 +746,7 @@ export default function ApiKeysPanel() {
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-red-50 hover:text-red-600"
                 onClick={() => deleteKey(menuKey.id)}
               >
                 <Trash2 className="size-3.5" aria-hidden="true" />

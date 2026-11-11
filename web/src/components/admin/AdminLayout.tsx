@@ -16,7 +16,7 @@ import {
   Webhook,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Link,
   Navigate,
@@ -33,6 +33,8 @@ import {
   displayNameOf,
 } from "../../lib/account";
 import { authHeader, readSession, signOut } from "../../lib/auth";
+import { onRealtime } from "../../lib/realtime";
+import AccessCountdown from "./AccessCountdown";
 import { ToastProvider } from "../ui/Toast";
 import { ConsoleAccountProvider } from "./consoleAccount";
 import RealtimeBridge from "./RealtimeBridge";
@@ -185,6 +187,7 @@ export default function AdminLayout() {
   const [navOpen, setNavOpen] = useState(false);
   const [role, setRole] = useState<"admin" | "user" | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [accessExpiresAt, setAccessExpiresAt] = useState<string | null>(null);
   const session = useMemo(() => readSession(), []);
   const view = resolveView(pathname);
   const domainDetail = /^\/console\/domains\/([^/]+)/.test(pathname);
@@ -202,31 +205,45 @@ export default function AdminLayout() {
     if (!session) return;
     let cancelled = false;
     const baseUrl = apiBase();
-    fetch(`${baseUrl}/api/v1/auth/me`, { headers: authHeader() })
-      .then(async (response) => {
-        if (response.status === 401) {
-          signOut();
-          navigate("/console/login", { replace: true });
-          return null;
-        }
-        if (!response.ok) return "user" as const;
-        const body = (await response.json()) as {
-          role?: string;
-          display_name?: string | null;
-        };
-        if (!cancelled) setDisplayName(body.display_name ?? null);
-        return body.role === "admin" ? ("admin" as const) : ("user" as const);
-      })
-      .then((next) => {
-        if (!cancelled && next) setRole(next);
-      })
-      .catch(() => {
-        if (!cancelled) setRole("user");
-      });
+    function loadAccount() {
+      fetch(`${baseUrl}/api/v1/auth/me`, { headers: authHeader() })
+        .then(async (response) => {
+          if (response.status === 401) {
+            signOut();
+            navigate("/console/login", { replace: true });
+            return null;
+          }
+          if (!response.ok) return "user" as const;
+          const body = (await response.json()) as {
+            role?: string;
+            display_name?: string | null;
+            access_expires_at?: string | null;
+          };
+          if (!cancelled) {
+            setDisplayName(body.display_name ?? null);
+            setAccessExpiresAt(body.access_expires_at ?? null);
+          }
+          return body.role === "admin" ? ("admin" as const) : ("user" as const);
+        })
+        .then((next) => {
+          if (!cancelled && next) setRole(next);
+        })
+        .catch(() => {
+          if (!cancelled) setRole((current) => current ?? "user");
+        });
+    }
+    loadAccount();
+    const stopRealtime = onRealtime(["account.changed"], loadAccount);
     return () => {
       cancelled = true;
+      stopRealtime();
     };
   }, [session, navigate]);
+
+  const onAccessExpired = useCallback(() => {
+    signOut();
+    navigate("/console/login", { replace: true });
+  }, [navigate]);
 
   useEffect(() => {
     function onName(event: Event) {
@@ -540,6 +557,11 @@ export default function AdminLayout() {
                       {description}
                     </p>
                   </div>
+                  <AccessCountdown
+                    expiresAt={accessExpiresAt}
+                    onExpired={onAccessExpired}
+                    className="ml-auto"
+                  />
                 </header>
               ) : (
                 <div className="flex shrink-0 items-center gap-3 border-b border-neutral-200 bg-white px-3 py-2 lg:hidden">
@@ -554,8 +576,21 @@ export default function AdminLayout() {
                   <p className="min-w-0 truncate text-sm font-medium">
                     {title}
                   </p>
+                  <AccessCountdown
+                    expiresAt={accessExpiresAt}
+                    onExpired={onAccessExpired}
+                    className="ml-auto"
+                  />
                 </div>
               )}
+              {immersive && accessExpiresAt ? (
+                <div className="fixed bottom-4 left-4 z-40 hidden rounded-sm bg-white shadow-sm lg:block">
+                  <AccessCountdown
+                    expiresAt={accessExpiresAt}
+                    onExpired={onAccessExpired}
+                  />
+                </div>
+              ) : null}
 
               <section
                 className={

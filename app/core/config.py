@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # None = auto (activé sur Vercel). Une fonction serverless peut s'arrêter
     # avant une tâche lancée après la réponse.
     send_inline: bool | None = None
+    # Background re-check of domains whose DNS is not fully configured. 0 = off.
+    # Ignored on serverless (no long-running process).
+    dns_recheck_seconds: int = 30
     # None = auto (SSL seulement pour les hôtes supabase.co / supabase.com).
     database_ssl: bool | None = None
 

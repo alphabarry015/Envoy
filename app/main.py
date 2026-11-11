@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -14,6 +15,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import SessionLocal, engine, get_db
 from app.services.auth import ensure_bootstrap_admin
+from app.services.dns_watcher import run_dns_watcher
 from app.services.vault import reseal_legacy_secrets
 from app.sql_files import read_sql
 
@@ -36,7 +38,16 @@ async def lifespan(_app: FastAPI):
                 await reseal_legacy_secrets(session)
         except Exception:
             logger.exception("Could not re-seal stored secrets")
+    stop_watcher = asyncio.Event()
+    watcher = (
+        asyncio.create_task(run_dns_watcher(stop_watcher))
+        if settings.dns_recheck_seconds > 0 and not settings.serverless
+        else None
+    )
     yield
+    if watcher is not None:
+        stop_watcher.set()
+        await watcher
     await engine.dispose()
     logger.info("Shutdown complete")
 

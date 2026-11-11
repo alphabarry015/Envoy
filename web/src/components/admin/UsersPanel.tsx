@@ -22,7 +22,11 @@ import {
   FIELD_COMPACT,
   PORTAL_SURFACE,
 } from "../../lib/consoleUi";
-import { PROVIDER_OPTIONS, type ProviderId } from "../../lib/providerOptions";
+import {
+  PROVIDER_OPTIONS,
+  type ProviderId,
+  providerLabel,
+} from "../../lib/providerOptions";
 import { fetchProviders } from "../../lib/providers";
 import { onRealtime } from "../../lib/realtime";
 import { PageLoading } from "../ui/ScanLoading";
@@ -33,6 +37,8 @@ import {
   type UserRole,
   type UserStatus,
   DOMAIN_QUOTA_OPTIONS,
+  accessExpired,
+  deliveryFailures,
   fetchUsers,
   deleteSuspendedUser,
   revokeUserInvite,
@@ -60,9 +66,24 @@ type FormState = {
   apiKeysEnabled: boolean;
   expiresInHours: 24 | 48;
   expiresOther: boolean;
+  expiresNever: boolean;
   expiresDays: number;
+  /** Edit mode only: end of an active member's access. */
+  accessChoice: AccessChoice;
   provider: ProviderId;
 };
+
+type AccessChoice = "keep" | "7" | "30" | "90" | "other" | "never";
+
+function accessExpiryFrom(form: FormState): string | null | undefined {
+  if (form.accessChoice === "keep") return undefined;
+  if (form.accessChoice === "never") return null;
+  const days =
+    form.accessChoice === "other"
+      ? Math.trunc(form.expiresDays)
+      : Number(form.accessChoice);
+  return new Date(Date.now() + days * 86_400_000).toISOString();
+}
 
 function emptyForm(provider: ProviderId = "ses"): FormState {
   return {
@@ -75,7 +96,9 @@ function emptyForm(provider: ProviderId = "ses"): FormState {
     apiKeysEnabled: true,
     expiresInHours: 48,
     expiresOther: false,
+    expiresNever: false,
     expiresDays: 7,
+    accessChoice: "keep",
     provider,
   };
 }
@@ -94,7 +117,9 @@ function formFromUser(
     apiKeysEnabled: user.apiKeysEnabled,
     expiresInHours: 48,
     expiresOther: false,
-    expiresDays: 7,
+    expiresNever: false,
+    expiresDays: 30,
+    accessChoice: "keep",
     provider,
   };
 }
@@ -349,12 +374,13 @@ export default function UsersPanel() {
         email,
         provider: form.provider,
         expiresInHours: form.expiresOther ? days * 24 : form.expiresInHours,
+        neverExpires: form.expiresNever,
       };
       const issuedInvite = fromRequest
         ? await acceptAccessRequest(fromRequest.id, draft)
         : await issueInvite(draft);
       await reload();
-      setIssued(issuedInvite);
+      setIssued({ ...issuedInvite, requestedWith: providerLabel(form.provider) });
     } catch (cause: unknown) {
       setError(
         cause instanceof Error ? cause.message : "Could not send the invite.",
@@ -367,9 +393,21 @@ export default function UsersPanel() {
   async function saveEdit() {
     if (!editing) return;
     setError(null);
+    const days = Math.trunc(form.expiresDays);
+    if (
+      form.accessChoice === "other" &&
+      (!Number.isInteger(days) || days < 1 || days > 3650)
+    ) {
+      setError("Enter a number of days between 1 and 3650.");
+      return;
+    }
     setSaving(true);
     try {
-      await updateUser(editing, { ...form, email: editing.email });
+      await updateUser(
+        editing,
+        { ...form, email: editing.email },
+        accessExpiryFrom(form),
+      );
       await reload();
       closeModal();
     } catch (cause: unknown) {
@@ -510,9 +548,20 @@ export default function UsersPanel() {
                           <span className="block truncate text-neutral-500">
                             {user.email}
                           </span>
-                          {user.status === "pending" && user.expiresAt ? (
+                          {user.status === "pending" ? (
                             <span className="mt-1 block font-mono text-[11px] text-neutral-400">
-                              Expires {formatWhen(user.expiresAt)}
+                              {user.expiresAt
+                                ? `Expires ${formatWhen(user.expiresAt)}`
+                                : "Never expires"}
+                            </span>
+                          ) : null}
+                          {user.status === "active" && user.accessExpiresAt ? (
+                            <span
+                              className={`mt-1 block font-mono text-[11px] ${accessExpired(user) ? "text-red-600" : "text-neutral-400"}`}
+                            >
+                              {accessExpired(user)
+                                ? `Access expired ${formatWhen(user.accessExpiresAt)}`
+                                : `Access until ${formatWhen(user.accessExpiresAt)}`}
                             </span>
                           ) : null}
                         </span>
@@ -593,7 +642,7 @@ export default function UsersPanel() {
                           ? `${issued.email} is on the way`
                           : "Share the invitation yourself"
                         : editing
-                          ? "Update quotas"
+                          ? "Update access"
                           : fromRequest
                             ? `Accept ${fromRequest.fullName}`
                             : "Invite a user"}
@@ -638,13 +687,56 @@ export default function UsersPanel() {
                         </p>
                       </div>
                     )}
-                    {issued.emailError ? (
-                      <p className="text-xs leading-relaxed break-words text-neutral-500">
-                        {issued.emailSent
-                          ? "Fallback used after: "
-                          : "Details: "}
-                        {issued.emailError}
-                      </p>
+                    {issued.emailSent &&
+                    issued.requestedWith &&
+                    issued.sentWith &&
+                    issued.sentWith !== issued.requestedWith ? (
+                      <div className="rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900">
+                        <p className="font-medium">
+                          {issued.requestedWith} was skipped — sent with{" "}
+                          {issued.sentWith} instead.
+                        </p>
+                        {deliveryFailures(issued.emailError)
+                          .filter((item) => item.tool === issued.requestedWith)
+                          .map((item) => (
+                            <p key={item.reason} className="mt-1 break-words">
+                              Reason: {item.reason}
+                            </p>
+                          ))}
+                      </div>
+                    ) : null}
+                    {deliveryFailures(issued.emailError).filter(
+                      (item) =>
+                        !issued.emailSent || item.tool !== issued.requestedWith,
+                    ).length > 0 ? (
+                      <div className="text-xs leading-relaxed text-neutral-500">
+                        <p>
+                          {issued.emailSent
+                            ? "Other tools skipped:"
+                            : "Why each tool failed:"}
+                        </p>
+                        <ul className="mt-1 space-y-0.5">
+                          {deliveryFailures(issued.emailError)
+                            .filter(
+                              (item) =>
+                                !issued.emailSent ||
+                                item.tool !== issued.requestedWith,
+                            )
+                            .map((item) => (
+                              <li
+                                key={`${item.tool}:${item.reason}`}
+                                className="break-words"
+                              >
+                                {item.tool ? (
+                                  <span className="font-medium text-neutral-700">
+                                    {item.tool}:
+                                  </span>
+                                ) : null}{" "}
+                                {item.reason}
+                              </li>
+                            ))}
+                        </ul>
+                      </div>
                     ) : null}
                     <CopyRow
                       label="Invitation code"
@@ -653,8 +745,11 @@ export default function UsersPanel() {
                     />
                     <CopyRow label="Activation link" value={issued.link} />
                     <p className="text-xs leading-relaxed text-neutral-500">
-                      Works once. Expires on{" "}
-                      {new Date(issued.expiresAt).toLocaleString()}. The code
+                      Works once.{" "}
+                      {issued.expiresAt
+                        ? `Expires on ${new Date(issued.expiresAt).toLocaleString()}.`
+                        : "Never expires — revoke it to cancel."}{" "}
+                      The code
                       goes in "Have an invitation code?" on the console sign-in
                       page.
                     </p>
@@ -765,9 +860,78 @@ export default function UsersPanel() {
                         />
                         <label className="block">
                           <span className="mb-2 block font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
-                            Expires
+                            {editing ? "Access expires" : "Expires"}
                           </span>
-                          {form.expiresOther && !editing ? (
+                          {editing ? (
+                            <>
+                              {form.accessChoice === "other" ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={3650}
+                                    inputMode="numeric"
+                                    aria-label="Access expires in days"
+                                    value={form.expiresDays}
+                                    onChange={(event) =>
+                                      setForm((current) => ({
+                                        ...current,
+                                        expiresDays: Number(event.target.value),
+                                      }))
+                                    }
+                                    className={FIELD_COMPACT}
+                                  />
+                                  <span className="shrink-0 font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
+                                    Days
+                                  </span>
+                                  <button
+                                    type="button"
+                                    aria-label="Keep current end date"
+                                    title="Keep current"
+                                    onClick={() =>
+                                      setForm((current) => ({
+                                        ...current,
+                                        accessChoice: "keep",
+                                      }))
+                                    }
+                                    className="inline-flex size-11 shrink-0 items-center justify-center rounded-sm border border-neutral-200 text-neutral-500 transition-colors hover:border-[#0A4BD6]/30 hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
+                                  >
+                                    <X className="size-4" aria-hidden="true" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <select
+                                  value={form.accessChoice}
+                                  onChange={(event) =>
+                                    setForm((current) => ({
+                                      ...current,
+                                      accessChoice: event.target
+                                        .value as AccessChoice,
+                                    }))
+                                  }
+                                  className={SELECT}
+                                  style={{ backgroundImage: SELECT_CHEVRON }}
+                                >
+                                  <option value="keep">
+                                    {editing.accessExpiresAt
+                                      ? `${accessExpired(editing) ? "Expired" : "Until"} ${formatWhen(editing.accessExpiresAt)}`
+                                      : "Never"}
+                                  </option>
+                                  <option value="7">In 7 days</option>
+                                  <option value="30">In 30 days</option>
+                                  <option value="90">In 90 days</option>
+                                  <option value="other">Other</option>
+                                  {editing.accessExpiresAt ? (
+                                    <option value="never">Never</option>
+                                  ) : null}
+                                </select>
+                              )}
+                              <span className="mt-1.5 block text-xs leading-relaxed text-neutral-500">
+                                After this date the member can no longer sign
+                                in, use API keys or send.
+                              </span>
+                            </>
+                          ) : form.expiresOther ? (
                             <div className="flex items-center gap-2">
                               <input
                                 type="number"
@@ -805,19 +969,29 @@ export default function UsersPanel() {
                             </div>
                           ) : (
                             <select
-                              value={form.expiresInHours}
+                              value={form.expiresNever ? "never" : form.expiresInHours}
                               disabled={Boolean(editing)}
                               onChange={(event) => {
                                 if (event.target.value === "other") {
                                   setForm((current) => ({
                                     ...current,
                                     expiresOther: true,
+                                    expiresNever: false,
+                                  }));
+                                  return;
+                                }
+                                if (event.target.value === "never") {
+                                  setForm((current) => ({
+                                    ...current,
+                                    expiresOther: false,
+                                    expiresNever: true,
                                   }));
                                   return;
                                 }
                                 setForm((current) => ({
                                   ...current,
                                   expiresOther: false,
+                                  expiresNever: false,
                                   expiresInHours: Number(event.target.value) as
                                     24 | 48,
                                 }));
@@ -828,6 +1002,7 @@ export default function UsersPanel() {
                               <option value={24}>24 hours</option>
                               <option value={48}>48 hours</option>
                               <option value="other">Other</option>
+                              <option value="never">Never</option>
                             </select>
                           )}
                         </label>
@@ -930,7 +1105,7 @@ export default function UsersPanel() {
                   className="flex w-full items-center px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-[#0A4BD6]/5 hover:text-[#0A4BD6]"
                   onClick={() => openEdit(menuUser)}
                 >
-                  Edit quotas
+                  Edit access
                 </button>
               ) : null}
               {menuUser.status === "active" &&
@@ -1009,6 +1184,10 @@ function QuotaSelect({
   options: readonly number[];
   onChange: (value: number | null) => void;
 }) {
+  const choices =
+    value === null || options.includes(value)
+      ? options
+      : [...options, value].sort((a, b) => a - b);
   return (
     <label className="block">
       <span className="mb-2 block font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
@@ -1023,7 +1202,7 @@ function QuotaSelect({
         className={SELECT}
         style={{ backgroundImage: SELECT_CHEVRON }}
       >
-        {options.map((option) => (
+        {choices.map((option) => (
           <option key={option} value={option}>
             {option.toLocaleString("en-US")}
           </option>

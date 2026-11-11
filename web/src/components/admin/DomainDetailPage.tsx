@@ -514,20 +514,6 @@ export default function DomainDetailPage() {
                 Verified
               </span>
             ) : null}
-            {domain.sendingProviders.includes("ses") ||
-            domain.sendingProviders.includes("brevo") ||
-            domain.sendingProviders.includes("resend") ||
-            domain.sendingProviders.includes("mailtrap") ? (
-              <button
-                type="button"
-                className={BTN_GHOST_SM}
-                onClick={() => void verifyDomain()}
-                disabled={verifying}
-              >
-                <RefreshCw className="size-3.5" aria-hidden="true" />
-                {verifying ? "Checking DNS…" : "Re-check DNS"}
-              </button>
-            ) : null}
 
             <div className="relative" ref={menuRef}>
               <button
@@ -916,20 +902,39 @@ export default function DomainDetailPage() {
         ref={dnsSectionRef}
         className="rounded-sm border border-neutral-200 bg-neutral-50 p-5 md:p-6"
       >
-        <div className="mb-8">
-          <p className="font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
-            DNS records
-          </p>
-          <p className="mt-1 text-sm text-neutral-500">
-            {selectedToolId
-              ? `Showing ${providerLabel(selectedToolId)} records. Publish pending ones, then re-check DNS.`
-              : "Select a sending tool above to view its DNS records."}
-          </p>
-          {selectedToolId ? (
-            <p className="mt-2 font-mono text-[11px] text-neutral-400">
-              {providerLabel(selectedToolId)} · {dnsVerifiedCount} configured ·{" "}
-              {dnsPendingCount} not configured
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="font-mono text-[11px] tracking-widest text-neutral-400 uppercase">
+              DNS records
             </p>
+            <p className="mt-1 text-sm text-neutral-500">
+              {selectedToolId
+                ? `Showing ${providerLabel(selectedToolId)} records. Publish pending ones, then re-check DNS.`
+                : "Select a sending tool above to view its DNS records."}
+            </p>
+            {selectedToolId ? (
+              <p className="mt-2 font-mono text-[11px] text-neutral-400">
+                {providerLabel(selectedToolId)} · {dnsVerifiedCount} configured ·{" "}
+                {dnsPendingCount} not configured
+              </p>
+            ) : null}
+          </div>
+          {domain.sendingProviders.includes("ses") ||
+          domain.sendingProviders.includes("brevo") ||
+          domain.sendingProviders.includes("resend") ||
+          domain.sendingProviders.includes("mailtrap") ? (
+            <button
+              type="button"
+              className={`${BTN_GHOST_SM} shrink-0`}
+              onClick={() => void verifyDomain()}
+              disabled={verifying}
+            >
+              <RefreshCw
+                className={`size-3.5 ${verifying ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              {verifying ? "Checking DNS…" : "Re-check DNS"}
+            </button>
           ) : null}
         </div>
 

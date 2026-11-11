@@ -30,10 +30,10 @@ async def get_providers(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ProvidersResponse:
-    listing = await list_providers(db)
+    listing = await list_providers(db, with_health=user.is_admin)
     if user.is_admin:
         return listing
-    # Platform-wide volumes and domain counts are admin-only.
+    # Platform-wide volumes, domain counts and health (errors of every account) are admin-only.
     for item in listing.items:
         item.usage = ProviderUsage()
         item.domains = ProviderDomainStats()

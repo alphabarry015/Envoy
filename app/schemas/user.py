@@ -26,6 +26,8 @@ class InviteUserRequest(BaseModel):
     monthly_send_quota: int | None = Field(default=None, ge=0)
     can_create_api_keys: bool = True
     invite_expires_hours: int | None = Field(default=None, ge=1, le=365 * 24)
+    # True: the invitation stays valid until it is used or revoked.
+    invite_never_expires: bool = False
     # Tool used to deliver the invite email (required — no silent SES-only path).
     provider: str = Field(..., min_length=1, max_length=32)
 
@@ -113,6 +115,7 @@ class UserResponse(BaseModel):
     monthly_send_quota: int | None = None
     can_create_api_keys: bool
     invite_token_expires_at: datetime | None = None
+    access_expires_at: datetime | None = None
     invite_reply_to: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -149,6 +152,8 @@ class UserUpdateRequest(BaseModel):
     daily_send_quota: int | None = Field(default=None, ge=0)
     monthly_send_quota: int | None = Field(default=None, ge=0)
     can_create_api_keys: bool
+    # Omitted = unchanged; null = never expires.
+    access_expires_at: datetime | None = None
 
 
 class TokenResponse(BaseModel):
@@ -161,7 +166,7 @@ class InviteCreatedResponse(BaseModel):
     email: EmailStr
     invite_token: str
     invite_link: str
-    expires_at: datetime
+    expires_at: datetime | None
     email_sent: bool
     sent_with: str | None = None
     email_error: str | None = None

@@ -310,25 +310,23 @@ export default function WebhooksPanel() {
             <p className="mt-3 text-sm text-neutral-500">No webhooks yet. Add an endpoint to receive events.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] table-fixed border-collapse text-left text-sm">
-              <colgroup>
-                <col className="w-[16%]" />
-                <col className="w-[28%]" />
-                <col className="w-[22%]" />
-                <col className="w-[12%]" />
-                <col className="w-[14%]" />
-                <col className="w-[8%]" />
-              </colgroup>
+          <div>
+            <table className="w-full table-fixed border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-neutral-200 text-[11px] tracking-widest text-neutral-400 uppercase">
-                  <th className="px-5 py-3 font-medium">Name</th>
-                  <th className="px-5 py-3 font-medium">Endpoint</th>
-                  <th className="px-5 py-3 font-medium">Events</th>
-                  <th className="px-5 py-3 font-medium">Providers</th>
-                  <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 font-medium">Created</th>
-                  <th className="px-5 py-3 text-right font-medium">
+                  <th className="w-[18%] px-3 py-3 font-medium md:pl-5">Name</th>
+                  <th className="px-3 py-3 font-medium">Endpoint</th>
+                  <th className="hidden w-[20%] px-3 py-3 font-medium lg:table-cell">
+                    Events
+                  </th>
+                  <th className="hidden w-[12%] px-3 py-3 font-medium xl:table-cell">
+                    Providers
+                  </th>
+                  <th className="w-[92px] px-3 py-3 font-medium">Status</th>
+                  <th className="hidden w-[13%] px-3 py-3 font-medium lg:table-cell">
+                    Created
+                  </th>
+                  <th className="w-14 px-3 py-3 text-right font-medium md:pr-5">
                     <span className="sr-only">Actions</span>
                   </th>
                 </tr>
@@ -336,10 +334,17 @@ export default function WebhooksPanel() {
               <tbody>
                 {webhooks.map((webhook) => (
                   <tr key={webhook.id} className="border-b border-neutral-200 last:border-b-0">
-                    <td className="px-5 py-4 font-medium text-neutral-950">{webhook.name}</td>
-                    <td className="px-5 py-4">
+                    <td
+                      className="truncate px-3 py-4 font-medium text-neutral-950 md:pl-5"
+                      title={webhook.name}
+                    >
+                      {webhook.name}
+                    </td>
+                    <td className="px-3 py-4">
                       <div className="group/cell flex min-w-0 items-center gap-1.5 font-mono text-xs text-neutral-600">
-                        <span className="truncate">{webhook.url}</span>
+                        <span className="truncate" title={webhook.url}>
+                          {webhook.url}
+                        </span>
                         <button
                           type="button"
                           aria-label="Copy endpoint"
@@ -359,13 +364,15 @@ export default function WebhooksPanel() {
                         </button>
                       </div>
                     </td>
-                    <td className="px-5 py-4 font-mono text-[11px] text-neutral-500">{webhook.events.join(" · ")}</td>
-                    <td className="px-5 py-4 font-mono text-[11px] text-neutral-500">
+                    <td className="hidden px-3 py-4 font-mono text-[11px] break-words text-neutral-500 lg:table-cell">
+                      {webhook.events.join(" · ")}
+                    </td>
+                    <td className="hidden px-3 py-4 font-mono text-[11px] break-words text-neutral-500 xl:table-cell">
                       {webhook.providers?.length
                         ? webhook.providers.map((id) => providerLabel(id)).join(" · ")
                         : "All"}
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-4">
                       {webhook.status === "active" ? (
                         <span className="inline-flex rounded-sm bg-emerald-50 px-2 py-0.5 font-mono text-[11px] text-emerald-700">
                           active
@@ -376,8 +383,10 @@ export default function WebhooksPanel() {
                         </span>
                       )}
                     </td>
-                    <td className="px-5 py-4 font-mono text-xs text-neutral-500">{formatWhen(webhook.createdAt)}</td>
-                    <td className="px-5 py-4 text-right">
+                    <td className="hidden px-3 py-4 font-mono text-[11px] text-neutral-500 lg:table-cell">
+                      {formatWhen(webhook.createdAt)}
+                    </td>
+                    <td className="px-3 py-4 text-right md:pr-5">
                       <button
                         type="button"
                         ref={(node) => {
@@ -624,7 +633,7 @@ export default function WebhooksPanel() {
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-red-50 hover:text-red-600"
                 onClick={() => deleteWebhook(menuWebhook.id)}
               >
                 <Trash2 className="size-3.5" aria-hidden="true" />

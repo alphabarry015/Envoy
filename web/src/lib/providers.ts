@@ -39,6 +39,9 @@ export type ProviderItem = {
   usage: ProviderUsage;
   domains: ProviderDomainStats;
   testing: boolean;
+  healthy?: boolean;
+  /** Plain-language reasons the tool is not fully working. */
+  issues?: string[];
 };
 
 export type ProviderRecentSend = {
@@ -154,6 +157,23 @@ export function roleLabel(role: string): string {
 export function usageRatio(used: number, limit: number | null): number {
   if (limit == null || limit <= 0) return 0;
   return Math.min(used / limit, 1);
+}
+
+/** Sending domains allowed on each tool's free plan (null = no documented cap). */
+export const FREE_PLAN_DOMAIN_LIMITS: Record<string, number | null> = {
+  ses: null,
+  resend: 3,
+  brevo: null,
+  mailtrap: 1,
+};
+
+/** Domains counted against the plan: the tool's own list when known, else Envoy's. */
+export function domainPlanUsage(
+  providerId: string,
+  domains: ProviderDomainStats | undefined,
+): { used: number; limit: number | null } {
+  const used = domains ? (domains.offered_known ? domains.offered : domains.connected) : 0;
+  return { used, limit: FREE_PLAN_DOMAIN_LIMITS[providerId] ?? null };
 }
 
 export function domainStatsLabel(domains: ProviderDomainStats | undefined): string {

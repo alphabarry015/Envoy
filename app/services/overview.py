@@ -9,7 +9,7 @@ from sqlalchemy.orm import load_only
 from app.models.domain import Domain, DomainStatus
 from app.models.email_log import EmailLog, EmailStatus
 from app.models.user import ApiKey, User
-from app.schemas.overview import OverviewActivity, OverviewResponse
+from app.schemas.overview import OverviewActivity, OverviewAllTime, OverviewResponse
 
 _ACCEPTED = (
     EmailStatus.QUEUED,
@@ -26,7 +26,10 @@ _FINISHED = (
 )
 
 
-async def account_overview(db: AsyncSession, user: User) -> OverviewResponse:
+RECENT_PAGE_SIZE = 10
+
+
+async def account_overview(db: AsyncSession, user: User, *, recent_page: int = 1) -> OverviewResponse:
     now = datetime.now(timezone.utc)
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = now - timedelta(days=7)
@@ -45,8 +48,9 @@ async def account_overview(db: AsyncSession, user: User) -> OverviewResponse:
     recent = await db.execute(
         select(EmailLog)
         .where(owned)
-        .order_by(EmailLog.created_at.desc())
-        .limit(5)
+        .order_by(EmailLog.created_at.desc(), EmailLog.id.desc())
+        .offset((recent_page - 1) * RECENT_PAGE_SIZE)
+        .limit(RECENT_PAGE_SIZE)
         .options(
             load_only(
                 EmailLog.id,
@@ -59,7 +63,23 @@ async def account_overview(db: AsyncSession, user: User) -> OverviewResponse:
             )
         )
     )
+    grouped = await db.execute(
+        select(EmailLog.status, EmailLog.provider, func.count())
+        .where(owned)
+        .group_by(EmailLog.status, EmailLog.provider)
+    )
+    all_time = OverviewAllTime()
+    for status, provider, count in grouped.all():
+        all_time.total += count
+        all_time.by_status[status.value] = all_time.by_status.get(status.value, 0) + count
+        key = provider or "unknown"
+        all_time.by_provider[key] = all_time.by_provider.get(key, 0) + count
+
     return OverviewResponse(
+        all_time=all_time,
+        recent_page=recent_page,
+        recent_page_size=RECENT_PAGE_SIZE,
+        recent_total=all_time.total,
         sends_today=sends_today,
         daily_send_quota=user.daily_send_quota,
         domains_live=domains_live,

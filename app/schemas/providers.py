@@ -45,6 +45,9 @@ class ProviderItem(BaseModel):
     usage: ProviderUsage = Field(default_factory=ProviderUsage)
     domains: ProviderDomainStats = Field(default_factory=ProviderDomainStats)
     testing: bool = False
+    healthy: bool = False
+    # Plain-language reasons the tool is not fully working. Empty when healthy.
+    issues: list[str] = Field(default_factory=list)
 
 
 class ProviderWebhookLink(BaseModel):

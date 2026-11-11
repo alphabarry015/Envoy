@@ -108,6 +108,8 @@ async def authenticate(db: AsyncSession, email: str, password: str) -> User:
     if not hashed:
         await asyncio.to_thread(_dummy_hash)
     password_ok = await _verify(password, hashed or _dummy_hash())
+    if user is not None and password_ok and user.status == UserStatus.ACTIVE and user.access_expired:
+        raise AuthError(403, "Your access has expired. Ask your workspace admin to extend it.")
     if user is None or not hashed or not password_ok or not user.is_active:
         raise AuthError(401, "Invalid email or password.")
     return user
@@ -177,8 +179,11 @@ async def invite_user(db: AsyncSession, actor: User, payload: InviteUserRequest)
         raise AuthError(409, "An account with this email already exists.")
 
     raw_token = generate_invite_token()
-    expires = datetime.now(timezone.utc) + timedelta(
-        hours=payload.invite_expires_hours or settings.invite_token_expire_hours
+    expires = (
+        None
+        if payload.invite_never_expires
+        else datetime.now(timezone.utc)
+        + timedelta(hours=payload.invite_expires_hours or settings.invite_token_expire_hours)
     )
     if existing:
         user = existing
@@ -258,8 +263,7 @@ async def accept_invite(db: AsyncSession, payload: AcceptInviteRequest) -> User:
         and user.status == UserStatus.PENDING
         and user.invite_token
         and hmac.compare_digest(user.invite_token, token_hash)
-        and expires is not None
-        and _as_utc(expires) > datetime.now(timezone.utc)
+        and (expires is None or _as_utc(expires) > datetime.now(timezone.utc))
     )
     if not valid or user is None:
         raise AuthError(400, "Invite token is invalid or expired.")
@@ -308,9 +312,17 @@ async def update_user(db: AsyncSession, actor: User, user_id: UUID, payload: Use
     user.daily_send_quota = payload.daily_send_quota
     user.monthly_send_quota = payload.monthly_send_quota
     user.can_create_api_keys = payload.can_create_api_keys
+    if "access_expires_at" in payload.model_fields_set:
+        expires = payload.access_expires_at
+        if expires is not None and _as_utc(expires) <= datetime.now(timezone.utc):
+            raise AuthError(422, "The access end date must be in the future.")
+        if user.id == actor.id and expires is not None:
+            raise AuthError(403, "You cannot set an end date on your own access.")
+        user.access_expires_at = expires
     await _mirror_auth_user(db, user)
     await db.commit()
     await db.refresh(user)
+    await realtime_publish(user.id, "account.changed", {"reason": "access_updated"})
     return user
 
 

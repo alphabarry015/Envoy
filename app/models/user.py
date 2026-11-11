@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, func, text
@@ -55,6 +55,12 @@ class User(Base):
     )
     invite_token: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
     invite_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    # Active seat only: after this date the member can no longer sign in, call the API
+    # or send. None = never expires.
+    access_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
@@ -116,7 +122,16 @@ class User(Base):
 
     @property
     def is_active(self) -> bool:
-        return self.status == UserStatus.ACTIVE
+        return self.status == UserStatus.ACTIVE and not self.access_expired
+
+    @property
+    def access_expired(self) -> bool:
+        expires = self.access_expires_at
+        if expires is None:
+            return False
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return expires <= datetime.now(timezone.utc)
 
 
 class ApiKey(Base):

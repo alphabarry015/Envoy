@@ -68,6 +68,7 @@ class AcceptAccessRequest(BaseModel):
     monthly_send_quota: int | None = Field(default=None, ge=0)
     can_create_api_keys: bool = True
     invite_expires_hours: int | None = Field(default=None, ge=1, le=365 * 24)
+    invite_never_expires: bool = False
     provider: str = Field(..., min_length=1, max_length=32)
 
 

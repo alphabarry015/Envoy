@@ -492,9 +492,10 @@ export const DOC_SECTIONS: Record<DocId, DocSection> = {
       {
         heading: "Events",
         items: [
-          "domains.changed: a domain was added, verified, removed or synced from a tool.",
+          "domains.changed: a domain was added, verified, removed or synced from a tool, or its DNS statuses changed during the automatic re-check (every 30 seconds).",
           "emails.changed: a log changed status.",
           "users.changed: an invite was sent.",
+          "account.changed: an admin changed your access (for example the end date of your access).",
           "realtime.ready: the connection came back. Pages reload their data.",
         ],
       },

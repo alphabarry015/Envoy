@@ -55,14 +55,19 @@ Les données PostgreSQL persistent dans le volume Docker `envoy_postgres_data`. 
 
 ## Endpoints v1
 
-| Méthode | Chemin | Statut sprint 1 |
+| Méthode | Chemin | Rôle |
 | --- | --- | --- |
-| `GET` | `/health` | Opérationnel |
-| `GET` | `/ready` | Opérationnel (ping PostgreSQL) |
-| `POST` | `/api/v1/domains` | Stub (501) — déclaration domaine + records DNS |
-| `GET` | `/api/v1/domains/{id}/verify` | Stub (501) — statut DKIM SES |
-| `POST` | `/api/v1/send` | Stub (501) — envoi transactionnel |
-| `POST` | `/api/v1/webhooks/ses` | Confirmation SNS opérationnelle ; bounces/complaints à brancher |
+| `GET` | `/health` | Vivacité |
+| `GET` | `/ready` | Ping PostgreSQL |
+| `POST` | `/api/v1/domains` | Déclare un domaine et le relie aux outils choisis (SES, Resend, Brevo, Mailtrap) |
+| `GET` | `/api/v1/domains/{id}/verify` | Re-synchronise les outils et revérifie le DNS en direct |
+| `POST` | `/api/v1/send` | Envoi transactionnel (clé `envoy_live_…`), failover entre outils |
+| `GET` | `/api/v1/providers` | Ordre d'envoi ; pour l'admin : consommation et état (`healthy`, `issues`) de chaque outil |
+| `GET` | `/api/v1/overview` | Totaux depuis le début + activité récente paginée (`recent_page`, 10 par page) |
+| `PATCH` | `/api/v1/auth/users/{id}` | Admin : rôle, quotas, et fin d'accès d'un membre actif (`access_expires_at`) |
+| `POST` | `/api/v1/webhooks/{ses,resend,brevo,mailtrap}` | Événements de livraison (delivered, bounce, complaint) |
+
+La documentation complète de l'API est servie par la console (`/docs`).
 
 ## Frontend (console UI mock)
 
@@ -95,3 +100,12 @@ docs/          # CDC, architecture, design system, notes frontend
 - `DATABASE_URL` pointe vers Supabase. Le service Postgres local de Compose n'est démarré qu'avec `docker compose --profile local up`.
 - Les clés API seront préfixées par `envoy_live_` (`API_KEY_PREFIX`).
 - Les credentials AWS vides s'appuient sur la chaîne IAM par défaut (profil local, rôle d'instance, etc.).
+- `DNS_RECHECK_SECONDS` (défaut `30`) : en arrière-plan, l'API revérifie le DNS des domaines pas encore entièrement configurés et pousse les nouveaux statuts en direct à la console. `0` désactive ; ignoré sur Vercel (pas de processus permanent).
+- Après une mise à jour du code, appliquer les migrations : `alembic upgrade head` (la `0024` ajoute la fin d'accès des membres).
+
+## Fonctionnalités récentes
+
+- **Fin d'accès d'un membre** : l'admin fixe une date (Edit access). Passé cette date, connexion, clés API et envois sont refusés ; le membre voit un compte à rebours dans l'en-tête et est déconnecté à zéro.
+- **Invitations sans expiration** (option « Never ») : le lien reste valable jusqu'à usage ou révocation.
+- **État des outils** (page Providers, admin) : badge « Working », ou « ? » expliquant ce qui bloque (clé absente, domaine non vérifié, sandbox SES, échecs des dernières 24 h).
+- **Idée à venir** : configuration DNS sans quitter Envoy, voir [`docs/idee_configuration_dns_integree.md`](docs/idee_configuration_dns_integree.md).
