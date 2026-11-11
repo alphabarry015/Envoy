@@ -316,8 +316,8 @@ export default function AdminLayout() {
         value={{ ready: role !== null, isAdmin: role === "admin" }}
       >
         <RealtimeBridge />
-        <main className="relative flex h-svh flex-col overflow-hidden bg-white text-neutral-950">
-          <div className="relative z-10 flex h-full w-full">
+        <main className="relative flex h-svh flex-col overflow-hidden bg-[#0A4BD6] pt-[env(safe-area-inset-top)] text-neutral-950">
+          <div className="relative z-10 flex min-h-0 w-full flex-1 bg-white pb-[env(safe-area-inset-bottom)]">
             {!immersive ? (
               <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-neutral-200 bg-neutral-50 px-5 py-6 lg:flex lg:px-6 lg:py-8">
                 <Link
@@ -454,7 +454,7 @@ export default function AdminLayout() {
                   className="absolute inset-0 bg-neutral-950/40"
                   onClick={() => setNavOpen(false)}
                 />
-                <aside className="relative flex h-full w-[min(18rem,88vw)] flex-col border-r border-neutral-200 bg-neutral-50 px-5 py-6">
+                <aside className="relative flex h-full w-[min(18rem,88vw)] flex-col border-r border-neutral-200 bg-neutral-50 px-5 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
                   <div className="mb-4 flex items-center justify-between">
                     <Link
                       to="/"

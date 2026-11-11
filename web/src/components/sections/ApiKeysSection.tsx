@@ -26,9 +26,9 @@ function Gauge({
   const ratio = Math.min(value / max, 1);
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between text-xs">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
         <span className="font-mono tracking-wide text-white/80 uppercase">{label}</span>
-        <span className="text-white/80">
+        <span className="tabular-nums text-white/80">
           {value.toLocaleString()} / {max.toLocaleString()}
         </span>
       </div>
@@ -75,7 +75,7 @@ export default function ApiKeysSection() {
         </div>
 
         <div className="lg:col-span-7">
-          <div className="rounded-sm border border-white/10 bg-[#0839B0]/70 p-5 md:p-7">
+          <div className="rounded-sm border border-white/10 bg-[#0839B0]/70 p-4 sm:p-5 md:p-7">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="font-mono text-[11px] tracking-widest text-white/80 uppercase">
                 Example key
@@ -86,7 +86,7 @@ export default function ApiKeysSection() {
             </div>
 
             <div
-              className={`mt-4 overflow-x-auto rounded-full border px-5 py-3 font-mono text-sm ${
+              className={`mt-4 rounded-sm border px-4 py-3 font-mono text-xs break-all sm:rounded-full sm:px-5 sm:text-sm ${
                 revoked
                   ? "border-red-400/30 bg-red-500/10 text-red-200 line-through"
                   : "border-white/15 bg-white/10 text-[#d6e8ff]"
@@ -101,7 +101,7 @@ export default function ApiKeysSection() {
               <Gauge label="Allowed domains" value={revoked ? 0 : 2} max={5} />
             </div>
 
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div className="mt-8 flex flex-wrap items-center gap-3">
               <SplitPillButton label="Generate key" onClick={generate} />
               <button
                 type="button"

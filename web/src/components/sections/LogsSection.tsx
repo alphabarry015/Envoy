@@ -41,7 +41,7 @@ export default function LogsSection() {
     <section id="logs" className="relative scroll-mt-8 overflow-hidden bg-[#0A4BD6] py-14 text-white md:py-28">
       <PixelAccents variant={2} />
       <div className="relative z-10 mx-auto w-full max-w-[92rem] px-4 sm:px-5 md:px-8">
-        <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
+        <div className="grid gap-8 sm:gap-12 lg:grid-cols-12 lg:gap-16">
           <div className="lg:col-span-5">
             <SectionHeader
               tone="dark"
@@ -61,25 +61,46 @@ export default function LogsSection() {
           </div>
 
           <div className="lg:col-span-7">
-            <div className="rounded-sm border border-white/10 bg-[#0839B0]/70 p-5 md:p-6">
+            <div className="rounded-sm border border-white/10 bg-[#0839B0]/70 p-4 sm:p-5 md:p-6">
               <p className="mb-4 font-mono text-[11px] tracking-widest text-white/80 uppercase">
                 Example event log
               </p>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-left text-sm">
+              <ul className="divide-y divide-white/10 md:hidden">
+                {ROWS.map((row) => (
+                  <li key={row.id} className="py-3 first:pt-0 last:pb-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate font-mono text-xs text-white/85">
+                        {row.recipient}
+                      </span>
+                      <span
+                        className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${STATUS_STYLES[row.event]}`}
+                      >
+                        {row.event}
+                      </span>
+                    </div>
+                    <p className="mt-1 font-mono text-[11px] text-white/60">
+                      {row.at} · {row.id}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              <div className="hidden md:block">
+                <table className="w-full table-fixed text-left text-sm">
                   <thead>
                     <tr className="border-b border-white/10 font-mono text-[11px] tracking-widest text-white/80 uppercase">
-                      <th className="py-2 font-medium">Time</th>
-                      <th className="py-2 font-medium">Recipient</th>
-                      <th className="py-2 font-medium">Event</th>
-                      <th className="py-2 font-medium">Message</th>
+                      <th className="w-24 py-2 font-medium">Time</th>
+                      <th className="py-2 pr-3 font-medium">Recipient</th>
+                      <th className="w-28 py-2 font-medium">Event</th>
+                      <th className="w-24 py-2 font-medium">Message</th>
                     </tr>
                   </thead>
                   <tbody>
                     {ROWS.map((row) => (
                       <tr key={row.id} className="border-b border-white/10">
                         <td className="py-3 font-mono text-xs text-white/80">{row.at}</td>
-                        <td className="py-3 font-mono text-xs text-white/80">{row.recipient}</td>
+                        <td className="truncate py-3 pr-3 font-mono text-xs text-white/80" title={row.recipient}>
+                          {row.recipient}
+                        </td>
                         <td className="py-3">
                           <span
                             className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${STATUS_STYLES[row.event]}`}
@@ -107,8 +128,8 @@ export default function LogsSection() {
                       key={entry.email}
                       className="flex items-center justify-between gap-3 border-b border-white/10 py-2 text-sm last:border-0"
                     >
-                      <span className="font-mono text-xs text-white/80">{entry.email}</span>
-                      <span className="rounded-full bg-orange-400/15 px-2 py-0.5 text-[11px] text-orange-200">
+                      <span className="min-w-0 truncate font-mono text-xs text-white/80">{entry.email}</span>
+                      <span className="shrink-0 rounded-full bg-orange-400/15 px-2 py-0.5 text-[11px] text-orange-200">
                         {entry.reason}
                       </span>
                     </li>

@@ -162,7 +162,7 @@ export default function DocsPage() {
   );
 
   return (
-    <main className="relative flex h-svh flex-col overflow-hidden bg-[#0A4BD6] text-white">
+    <main className="relative flex h-svh flex-col overflow-hidden bg-[#0A4BD6] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] text-white">
       <div className="relative z-10 flex h-full min-h-0 flex-col lg:hidden">
         <header className="flex shrink-0 items-center gap-2 border-b border-white/10 px-3 py-2">
           <button
@@ -192,7 +192,7 @@ export default function DocsPage() {
               className="absolute inset-0 bg-[#06245f]/50"
               onClick={() => setMenuOpen(false)}
             />
-            <div className="relative flex h-full w-[min(18rem,88vw)] flex-col bg-[#0A4BD6]">
+            <div className="relative flex h-full w-[min(18rem,88vw)] flex-col bg-[#0A4BD6] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
               <div className="flex justify-end px-2 pt-2">
                 <button
                   type="button"

@@ -73,7 +73,7 @@ export default function DomainsSection() {
         </div>
 
         <div className="lg:col-span-7">
-          <div className="rounded-sm border border-white/10 bg-[#0839B0]/70 p-5 md:p-7">
+          <div className="rounded-sm border border-white/10 bg-[#0839B0]/70 p-4 sm:p-5 md:p-7">
             <label
               htmlFor="landing-domain"
               className="mb-2 block font-mono text-[11px] tracking-widest text-white/80 uppercase"
@@ -96,8 +96,8 @@ export default function DomainsSection() {
               <SplitPillButton label="Show records" onClick={addDomain} />
             </div>
 
-            <div className="mt-5 flex items-center justify-between gap-3">
-              <p className="font-mono text-xs tracking-wide text-white/80">
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+              <p className="min-w-0 font-mono text-xs tracking-wide break-all text-white/80">
                 Example · {domain}
               </p>
               <span className="inline-flex items-center rounded-sm border border-white/20 bg-white/10 px-3 py-1 font-mono text-[11px] tracking-wide text-white">
@@ -105,14 +105,59 @@ export default function DomainsSection() {
               </span>
             </div>
 
-            <div className="mt-5 overflow-x-auto">
-              <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+            <ul className="mt-5 space-y-3 md:hidden">
+              {records.map((record) => (
+                <li
+                  key={record.name}
+                  className="rounded-sm border border-white/10 bg-white/5 p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[11px] text-white">
+                        {record.type}
+                      </span>
+                      <span className="font-mono text-[11px] tracking-widest text-white/70 uppercase">
+                        {record.purpose}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void copyRecord(record)}
+                      aria-label={`Copy ${record.purpose} record`}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-white/15 px-3 py-1 text-xs font-medium text-white/80 hover:border-white/40 hover:text-white"
+                    >
+                      {copied === record.name ? (
+                        <Check className="size-3.5" aria-hidden="true" />
+                      ) : (
+                        <Copy className="size-3.5" aria-hidden="true" />
+                      )}
+                      {copied === record.name ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <p className="mt-3 font-mono text-[10px] tracking-widest text-white/50 uppercase">
+                    Name
+                  </p>
+                  <p className="mt-0.5 font-mono text-xs break-all text-white/85">
+                    {record.name}
+                  </p>
+                  <p className="mt-2 font-mono text-[10px] tracking-widest text-white/50 uppercase">
+                    Value
+                  </p>
+                  <p className="mt-0.5 font-mono text-xs break-all text-white/85">
+                    {record.value}
+                  </p>
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-5 hidden md:block">
+              <table className="w-full table-fixed border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-white/10 font-mono text-[11px] tracking-widest text-white/80 uppercase">
-                    <th className="py-2 pr-3 font-medium">Type</th>
+                    <th className="w-16 py-2 pr-3 font-medium">Type</th>
                     <th className="py-2 pr-3 font-medium">Name</th>
                     <th className="py-2 pr-3 font-medium">Value</th>
-                    <th className="py-2 font-medium">
+                    <th className="w-24 py-2 font-medium">
                       <span className="sr-only">Action</span>
                     </th>
                   </tr>
@@ -125,10 +170,16 @@ export default function DomainsSection() {
                           {record.type}
                         </span>
                       </td>
-                      <td className="max-w-[220px] truncate py-3 pr-3 font-mono text-xs text-white/80">
+                      <td
+                        className="truncate py-3 pr-3 font-mono text-xs text-white/80"
+                        title={record.name}
+                      >
                         {record.name}
                       </td>
-                      <td className="max-w-[240px] truncate py-3 pr-3 font-mono text-xs text-white/80">
+                      <td
+                        className="truncate py-3 pr-3 font-mono text-xs text-white/80"
+                        title={record.value}
+                      >
                         {record.value}
                       </td>
                       <td className="py-3 text-right">

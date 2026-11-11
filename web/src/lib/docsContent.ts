@@ -256,6 +256,7 @@ export const DOC_SECTIONS: Record<DocId, DocSection> = {
           ["POST /domains", "Connect a domain (201)"],
           ["GET /domains/{id}", "One domain with its records"],
           ["GET /domains/{id}/verify", "Refresh status from tools and DNS"],
+          ["POST /domains/{id}/dns-recheck", "Live DNS check only, without calling the tools"],
           ["PATCH /domains/{id}/providers", "Change the tools linked to the domain"],
           ["PUT /domains/{id}/sender", "Default sender and reply mode for the domain"],
           ["DELETE /domains/{id}", "Remove from Envoy (204)"],

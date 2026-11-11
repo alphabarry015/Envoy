@@ -100,7 +100,7 @@ docs/          # CDC, architecture, design system, notes frontend
 - `DATABASE_URL` pointe vers Supabase. Le service Postgres local de Compose n'est démarré qu'avec `docker compose --profile local up`.
 - Les clés API seront préfixées par `envoy_live_` (`API_KEY_PREFIX`).
 - Les credentials AWS vides s'appuient sur la chaîne IAM par défaut (profil local, rôle d'instance, etc.).
-- `DNS_RECHECK_SECONDS` (défaut `30`) : en arrière-plan, l'API revérifie le DNS des domaines pas encore entièrement configurés et pousse les nouveaux statuts en direct à la console. `0` désactive ; ignoré sur Vercel (pas de processus permanent).
+- `DNS_RECHECK_SECONDS` (défaut `30`) : en arrière-plan, l'API revérifie le DNS des domaines pas encore entièrement configurés et pousse les nouveaux statuts en direct à la console. `0` désactive ; ignoré sur Vercel (pas de processus permanent). Sur Vercel, c'est la page du domaine ouverte qui appelle `POST /api/v1/domains/{id}/dns-recheck` toutes les 30 s (vérification DNS seule, sans appeler les outils).
 - Après une mise à jour du code, appliquer les migrations : `alembic upgrade head` (la `0024` ajoute la fin d'accès des membres).
 
 ## Fonctionnalités récentes

@@ -300,6 +300,15 @@ export async function verifyRemoteDomain(id: string): Promise<ConsoleDomain> {
   return current;
 }
 
+/** Live DNS check only (no call to the sending tools); a no-op once every record is verified. */
+export async function recheckDomainDns(id: string): Promise<void> {
+  const response = await fetch(`${apiUrl()}/api/v1/domains/${id}/dns-recheck`, {
+    method: "POST",
+    headers: authHeader(),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+}
+
 export async function disconnectRemoteDomain(id: string): Promise<void> {
   const baseUrl = apiUrl();
   const response = await fetch(`${baseUrl}/api/v1/domains/${id}`, {

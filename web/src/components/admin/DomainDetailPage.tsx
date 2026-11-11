@@ -26,6 +26,7 @@ import {
   disconnectRemoteDomain,
   dnsRecordsForTool,
   fetchDomain,
+  recheckDomainDns,
   toDnsCsv,
   updateDomainProviders,
   verifyRemoteDomain,
@@ -188,7 +189,11 @@ export default function DomainDetailPage() {
       }
       void reloadDomain({ silent: true });
     });
-    const stopVisible = onVisibleRefresh(() => void reloadDomain({ silent: true }), 30_000);
+    const stopVisible = onVisibleRefresh(() => {
+      void recheckDomainDns(domainId)
+        .catch(() => undefined)
+        .finally(() => void reloadDomain({ silent: true }));
+    }, 30_000);
     return () => {
       stopRealtime();
       stopVisible();

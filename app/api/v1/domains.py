@@ -17,6 +17,7 @@ from app.schemas.domain import (
     DomainVerifyResponse,
 )
 from app.services.aws_ses import SESService, get_ses_service
+from app.services.dns_watcher import recheck_owned_domain
 from app.services.domains import (
     DomainError,
     connect_domain,
@@ -136,6 +137,24 @@ async def verify_domain(
         verified=domain.status.value == "verified",
         dns_records=domain.dns_records,
     )
+
+
+@router.post(
+    "/{domain_id}/dns-recheck",
+    response_model=DomainResponse,
+    summary="Revérifier le DNS en direct (sans appeler les outils)",
+)
+async def dns_recheck_domain(
+    domain_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    ses: SESService = Depends(get_ses_service),
+) -> DomainResponse:
+    try:
+        await recheck_owned_domain(db, user, domain_id)
+        return await get_domain(db, user, domain_id, ses)
+    except DomainError as exc:
+        raise _error(exc) from exc
 
 
 @router.delete(

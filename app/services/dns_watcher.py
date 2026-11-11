@@ -8,6 +8,7 @@ import time
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -34,24 +35,43 @@ def _needs_watch(domain: Domain) -> bool:
     )
 
 
+async def recheck_domain(db: AsyncSession, domain: Domain) -> bool:
+    """Live DNS check of one domain. Returns True when a status changed."""
+    if not _needs_watch(domain):
+        return False
+    before = _statuses(domain.dns_records)
+    records = await _finalize_dns_records(domain.dns_records)
+    after = _statuses(records)
+    changed = after != before
+    if changed:
+        domain.dns_records = records
+        await db.commit()
+        await _notify_domains(domain.user_id, "dns_rechecked", domain_id=str(domain.id), name=domain.name)
+
+    all_published = bool(after) and all(status == "verified" for status in after)
+    if domain.status != DomainStatus.VERIFIED and all_published:
+        await _sync_with_tools(db, domain)
+    return changed
+
+
+async def recheck_owned_domain(db: AsyncSession, user: User, domain_id: UUID) -> Domain:
+    """Same cheap check for one domain of this user (used where no background loop runs)."""
+    domain = await db.get(Domain, domain_id)
+    if domain is None or domain.user_id != user.id:
+        raise DomainError(404, "Domain not found.")
+    await recheck_domain(db, domain)
+    await db.refresh(domain)
+    return domain
+
+
 async def recheck_pending_domains() -> int:
     """One pass. Returns how many domains changed."""
     changed = 0
     async with SessionLocal() as db:
         domains = [item for item in (await db.execute(select(Domain))).scalars().all() if _needs_watch(item)]
         for domain in domains:
-            before = _statuses(domain.dns_records)
-            records = await _finalize_dns_records(domain.dns_records)
-            after = _statuses(records)
-            if after != before:
-                domain.dns_records = records
-                await db.commit()
+            if await recheck_domain(db, domain):
                 changed += 1
-                await _notify_domains(domain.user_id, "dns_rechecked", domain_id=str(domain.id), name=domain.name)
-
-            all_published = bool(after) and all(status == "verified" for status in after)
-            if domain.status != DomainStatus.VERIFIED and all_published:
-                await _sync_with_tools(db, domain)
     return changed
 
 

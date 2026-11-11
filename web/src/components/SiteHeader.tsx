@@ -34,8 +34,8 @@ export default function SiteHeader({ variant = "overlay" }: SiteHeaderProps) {
   }, [mobileOpen]);
 
   return (
-    <header className={`relative z-30 ${barClass}`}>
-      <div className="mx-auto grid w-full max-w-[92rem] grid-cols-[1fr_auto] items-center gap-3 px-4 py-4 md:px-8 md:py-6 lg:grid-cols-[1fr_auto_1fr]">
+    <header className={`relative z-30 pt-[env(safe-area-inset-top)] ${barClass}`}>
+      <div className="mx-auto grid w-full max-w-[92rem] grid-cols-[1fr_auto] items-center gap-3 py-4 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:px-8 md:py-6 lg:grid-cols-[1fr_auto_1fr]">
         <Link
           to="/"
           className={`flex items-center gap-2.5 justify-self-start rounded-sm text-lg font-semibold tracking-[0.18em] text-white ${FOCUS}`}
